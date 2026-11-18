@@ -1,0 +1,73 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+import { Palette } from "palette.zge";
+import { Style } from "style.zge";
+
+// A plain container with the window's background and some padding: its
+// children one above the other.
+export component Pane inherits Rectangle {
+    var in <length> padding: 12px;
+    var in <length> spacing: 8px;
+    background: Palette.background;
+    VerticalLayout {
+        padding: root.padding;
+        spacing: root.spacing;
+        @children
+    }
+}
+
+// A container with a border around its children.
+export component Frame inherits Rectangle {
+    var in <length> padding: 12px;
+    var in <length> spacing: 8px;
+    border-width: 1px;
+    border-color: Palette.border;
+    border-radius: Style.card-radius;
+    VerticalLayout {
+        padding: root.padding;
+        spacing: root.spacing;
+        @children
+    }
+}
+
+// A titled frame (`text`) around controls that belong together.
+export component GroupBox inherits Empty {
+    var in <string> text;
+    var in <bool> enabled: true;
+    var in <length> spacing: 8px;
+
+    accessible-role: group;
+    accessible-label: root.text;
+
+    Rectangle {
+        y: label.preferred-height / 2;
+        height: parent.height - self.y;
+        border-width: 1px;
+        border-color: Palette.border;
+        border-radius: Style.card-radius;
+    }
+    // Its title, over the border (on the background).
+    Rectangle {
+        x: 8px;
+        width: label.preferred-width + 8px;
+        height: label.preferred-height;
+        background: Palette.background;
+        visible: root.text != "";
+    }
+    label := Text {
+        x: 12px;
+        width: self.preferred-width;
+        height: self.preferred-height;
+        text: root.text;
+        font-size: Style.font-size;
+        font-weight: 600;
+        color: root.enabled ? Palette.foreground : Palette.disabled-foreground;
+    }
+    VerticalLayout {
+        padding: 12px;
+        padding-top: label.preferred-height + 8px;
+        spacing: root.spacing;
+        @children
+    }
+}

@@ -1,0 +1,665 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// The gallery: the standard widgets, in .zge. `zig build run-gallery`
+// (add -Dstyle=material or -Dstyle=minimal for the other styles).
+
+import { RadioButton, ButtonGroup, GroupBox, Button, CheckBox, Switch, Slider, SpinBox, ProgressIndicator, Spinner, ComboBox, LineEdit, TabWidget, ListView, StandardTableView, DatePicker, Tumbler, Menu, MenuBar, MenuBarItem, ToolTip, Dialog, MessageDialog, Palette, Style } from "std-widgets.zge";
+
+// What the gallery keeps from one run to the next.
+component GallerySettings inherits Settings {
+    category: "gallery";
+    var in-out <bool> dark;
+    var in-out <int> tab;
+    var in-out <float> volume;
+}
+
+export component Gallery inherits Window {
+    width: 460px;
+    height: 640px;
+    title: "zigulee gallery";
+
+    var in-out <bool> dark <=> Palette.dark;
+    var in-out <int> tab;
+    var in-out <int> clicks;
+    var in-out <float> volume: 40;
+    var in-out <int> amount: 3;
+    var in-out <int> fruit;
+    var in-out <string> typed;
+    // The rows of the list picked (a click, Ctrl- or Cmd-click, Shift-click).
+    var out <int> picked-rows: picked.selected-rows.length;
+    var in-out <string> picked-date;
+    var in-out <int> hour: 7;
+    var in-out <int> minute: 6;
+    // The Effects tab: the subject (rectangle, picture, animation), each
+    // effect's box and setting.
+    var in-out <int> fx-subject;
+    var in-out <bool> fx-rotate: true;
+    var in-out <float> fx-angle: 12;
+    var in-out <bool> fx-scale;
+    var in-out <float> fx-zoom: 1.2;
+    var in-out <bool> fx-round: true;
+    var in-out <float> fx-radius: 18;
+    var in-out <bool> fx-border;
+    var in-out <float> fx-border-width: 4;
+    var in-out <bool> fx-shadow: true;
+    var in-out <float> fx-shadow-size: 16;
+    var in-out <bool> fx-blur;
+    var in-out <float> fx-blurring: 3;
+    var in-out <bool> fx-fade;
+    var in-out <float> fx-opacity: 0.5;
+    var in-out <bool> fx-tint;
+    var in-out <int> size: 1;
+
+    background: Palette.background;
+    animate background { duration: 180ms; easing: ease-out; }
+    // Dark mode, the tab and the volume, as they were last time.
+    GallerySettings {
+        dark <=> root.dark;
+        tab <=> root.tab;
+        volume <=> root.volume;
+    }
+
+    // The Charts tab: the week the data starts at, and the bar picked.
+    var in-out <int> chart-week;
+    var in-out <int> chart-picked: -1;
+    // Sales in week `i` (from `chart-week`), made up.
+    function sales(i: int) -> float {
+        return mod((i + root.chart-week) * 37, 41) + 12;
+    }
+    // The share of each channel, in percent.
+    function share(i: int) -> int {
+        if i == 0 { return 42; }
+        if i == 1 { return 27; }
+        if i == 2 { return 18; }
+        return 13;
+    }
+    function channel(i: int) -> string {
+        if i == 0 { return "Web"; }
+        if i == 1 { return "Shop"; }
+        if i == 2 { return "Phone"; }
+        return "Other";
+    }
+    function channel-color(i: int) -> color {
+        if i == 0 { return #4e79a7; }
+        if i == 1 { return #f28e2b; }
+        if i == 2 { return #e15759; }
+        return #76b7b2;
+    }
+
+    function fx-reset() {
+        root.fx-rotate = true;
+        root.fx-angle = 12;
+        root.fx-scale = false;
+        root.fx-zoom = 1.2;
+        root.fx-round = true;
+        root.fx-radius = 18;
+        root.fx-border = false;
+        root.fx-border-width = 4;
+        root.fx-shadow = true;
+        root.fx-shadow-size = 16;
+        root.fx-blur = false;
+        root.fx-blurring = 3;
+        root.fx-fade = false;
+        root.fx-opacity = 0.5;
+        root.fx-tint = false;
+    }
+
+    // A right click on the background: a context menu.
+    TouchArea {
+        right-clicked => { context.open-at(self.mouse-x, self.mouse-y); }
+    }
+    context := Menu {
+        items: [
+            { text: "Dark mode", checked: root.dark },
+            { separator: true },
+            { text: "Reset clicks…", disabled: root.clicks == 0 },
+            { separator: true },
+            // A submenu: the tabs.
+            { text: "Go to" },
+            { text: "Controls", level: 1, checked: root.tab == 0 },
+            { text: "Lists", level: 1, checked: root.tab == 1 },
+            { text: "Calendar", level: 1, checked: root.tab == 2 },
+            { text: "Time", level: 1, checked: root.tab == 3 },
+            { text: "Effects", level: 1, checked: root.tab == 4 },
+            { text: "Charts", level: 1, checked: root.tab == 5 },
+        ];
+        activated(i) => {
+            if i == 0 { root.dark = !root.dark; }
+            if i == 2 { confirm-reset.open(); }
+            if i >= 5 { root.tab = i - 5; }
+        }
+    }
+    // Asked before resetting the clicks.
+    confirm-reset := Dialog {
+        heading: "Reset the clicks?";
+        buttons: ["Cancel", "Reset"];
+        cancel-button: 0;
+        accepted => { root.clicks = 0; }
+        Text {
+            text: "The count of \{root.clicks} click" + (root.clicks == 1 ? "" : "s") + " starts over from zero.";
+            wrap: word-wrap;
+            font-size: Style.font-size;
+            color: Palette.foreground;
+        }
+    }
+    // The platform's file dialogs.
+    open-dialog := FileDialog {
+        title: "Open images";
+        mode: open-files;
+        filter: "Images (*.png *.jpg *.jpeg *.gif);;All files (*)";
+    }
+    save-dialog := FileDialog {
+        title: "Save the clicks";
+        mode: save-file;
+        filter: "Text files (*.txt)";
+        file-name: "clicks.txt";
+    }
+    about := MessageDialog {
+        heading: "zigulee gallery";
+        text: "The standard widgets of zigulee, a declarative GUI framework for Zig, written in .zge.";
+    }
+
+    VerticalLayout {
+        MenuBar {
+            file-menu := MenuBarItem {
+                text: "File";
+                items: [
+                    { text: "Open images…", shortcut: "Ctrl+O" },
+                    { text: "Save as…", shortcut: "Ctrl+S" },
+                    { separator: true },
+                    { text: "Reset clicks…", shortcut: "Ctrl+R", disabled: root.clicks == 0 },
+                    { text: "Reset volume" },
+                ];
+                activated(i) => {
+                    if i == 0 { open-dialog.open(); }
+                    if i == 1 { save-dialog.open(); }
+                    if i == 3 { confirm-reset.open(); }
+                    if i == 4 { root.volume = 40; }
+                }
+            }
+            view-menu := MenuBarItem {
+                text: "View";
+                items: [
+                    { text: "Dark mode", shortcut: "Ctrl+D", checked: root.dark },
+                    { separator: true },
+                    { text: "Controls", checked: root.tab == 0 },
+                    { text: "Lists", checked: root.tab == 1 },
+                    { text: "Calendar", checked: root.tab == 2 },
+                    { text: "Time", checked: root.tab == 3 },
+                    { text: "Effects", checked: root.tab == 4 },
+                    { text: "Charts", checked: root.tab == 5 },
+                ];
+                activated(i) => {
+                    if i == 0 { root.dark = !root.dark; } else { root.tab = i - 2; }
+                }
+            }
+            help-menu := MenuBarItem {
+                text: "Help";
+                items: [{ text: "About…" }];
+                activated(i) => { about.open(); }
+            }
+        }
+        VerticalLayout {
+            padding: 20px;
+            spacing: 12px;
+
+            Text {
+                text: "zigulee gallery";
+                font-weight: 700;
+                font-size: 24px;
+                color: Palette.foreground;
+            }
+            Text {
+                text: "The standard widgets, written in .zge";
+                font-size: 13px;
+                color: Palette.secondary-foreground;
+            }
+
+            tabs := TabWidget {
+                vertical-stretch: 1;
+                tabs: ["Controls", "Lists", "Calendar", "Time", "Effects", "Charts"];
+                current-index <=> root.tab;
+
+                // Controls.
+                VerticalLayout {
+                    visible: root.tab == 0;
+                    padding-top: 12px;
+                    spacing: 10px;
+                    alignment: start;
+                    HorizontalLayout {
+                        spacing: 12px;
+                        alignment: start;
+                        click := Button {
+                            text: "Click me";
+                            primary: true;
+                            clicked => { clicks += 1; }
+                            click-tip := ToolTip {
+                                text: "Counts the clicks (File > Reset clicks starts over)";
+                                shown: click.has-hover;
+                            }
+                        }
+                        Text {
+                            text: "Clicked \{clicks} time" + (clicks == 1 ? "" : "s");
+                            font-size: Style.font-size;
+                            vertical-alignment: center;
+                            color: Palette.foreground;
+                        }
+                    }
+                    dark-switch := Switch {
+                        text: "Dark mode";
+                        checked <=> root.dark;
+                        ToolTip {
+                            text: "Also in View > Dark mode, and on a right click";
+                            shown: dark-switch.has-hover;
+                        }
+                    }
+                    CheckBox {
+                        text: "Remember me";
+                        checked: true;
+                    }
+                    HorizontalLayout {
+                        spacing: 12px;
+                        Slider {
+                            maximum: 100;
+                            value <=> root.volume;
+                        }
+                        Text {
+                            width: 36px;
+                            text: "\{round(root.volume)}";
+                            font-size: Style.font-size;
+                            vertical-alignment: center;
+                            color: Palette.foreground;
+                        }
+                    }
+                    ProgressIndicator { progress: root.volume / 100; }
+                    HorizontalLayout {
+                        spacing: 12px;
+                        alignment: start;
+                        SpinBox {
+                            maximum: 10;
+                            value <=> root.amount;
+                        }
+                        ComboBox {
+                            model: ["Apple", "Banana", "Cherry", "Date"];
+                            current-index <=> root.fruit;
+                        }
+                        Spinner { width: 24px; }
+                    }
+                    field := LineEdit {
+                        placeholder-text: "Type something…";
+                        text <=> root.typed;
+                    }
+                    LineEdit {
+                        placeholder-text: "Password";
+                        input-type: password;
+                    }
+                    GroupBox {
+                        text: "Size";
+                        ButtonGroup {
+                            horizontal: true;
+                            model: ["Small", "Medium", "Large"];
+                            current-index <=> root.size;
+                        }
+                    }
+                    // What File > Open images… and Save as… chose.
+                    Text {
+                        text: save-dialog.selected-file == "" ? "File > Open images… or Save as…" : "Save to " + save-dialog.selected-file;
+                        font-size: Style.font-size;
+                        overflow: elide;
+                        color: Palette.secondary-foreground;
+                    }
+                    for file in open-dialog.selected-files : Text {
+                        text: file;
+                        font-size: Style.font-size;
+                        overflow: elide;
+                        color: Palette.foreground;
+                    }
+                }
+
+                // Lists.
+                VerticalLayout {
+                    visible: root.tab == 1;
+                    padding-top: 12px;
+                    spacing: 10px;
+                    picked := Selection { count: 60; }
+                    list := ListView {
+                        vertical-stretch: 1;
+                        for i in 60 : Rectangle {
+                            height: 34px;
+                            background: picked.selected[i] ? Palette.selection-background
+                                : row-touch.has-hover ? Palette.control-hover : #00000000;
+                            Text {
+                                x: 14px;
+                                width: parent.width - 28px;
+                                text: ["Apple", "Banana", "Cherry", "Date", "Elderberry", "Fig", "Grape", "Honeydew", "Kiwi", "Lemon"][mod(i, 10)] + " #\{i + 1}";
+                                font-size: Style.font-size;
+                                vertical-alignment: center;
+                                color: Palette.foreground;
+                            }
+                            row-touch := TouchArea {
+                                clicked => {
+                                    if self.modifiers.shift {
+                                        picked.extend-to(i);
+                                    } else if self.modifiers.control || self.modifiers.meta {
+                                        picked.toggle(i);
+                                    } else {
+                                        picked.select(i);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    StandardTableView {
+                        height: 170px;
+                        selection-mode: extended;
+                        columns: ["Language", "Year"];
+                        rows: [["Zig", "2016"], ["Slint", "2020"], ["C", "1972"], ["Rust", "2015"], ["Go", "2009"]];
+                    }
+                }
+
+                // Calendar.
+                VerticalLayout {
+                    visible: root.tab == 2;
+                    padding-top: 12px;
+                    spacing: 10px;
+                    alignment: start;
+                    DatePicker {
+                        height: 300px;
+                        year: 2026;
+                        month: 10;
+                        day: 14;
+                        picked(y, m, d) => { root.picked-date = "\{y}-\{m}-\{d}"; }
+                    }
+                    Text {
+                        text: root.picked-date == "" ? "Pick a day" : "Picked " + root.picked-date;
+                        font-size: Style.font-size;
+                        color: Palette.foreground;
+                    }
+                }
+
+                // Time: two tumblers.
+                VerticalLayout {
+                    visible: root.tab == 3;
+                    padding-top: 12px;
+                    spacing: 10px;
+                    alignment: start;
+                    HorizontalLayout {
+                        spacing: 8px;
+                        alignment: start;
+                        hours := Tumbler {
+                            model: ["00", "01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "23"];
+                            current-index <=> root.hour;
+                        }
+                        Text {
+                            text: ":";
+                            font-size: 20px;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                            color: Palette.foreground;
+                        }
+                        minutes := Tumbler {
+                            model: ["00", "05", "10", "15", "20", "25", "30", "35", "40", "45", "50", "55"];
+                            current-index <=> root.minute;
+                        }
+                    }
+                    Text {
+                        text: "Time: " + hours.current-value + ":" + minutes.current-value;
+                        font-size: Style.font-size;
+                        color: Palette.foreground;
+                    }
+                }
+
+                // Effects: one subject (a rectangle, a picture or an
+                // animation) decorated with effects, each switched on with
+                // its box and set with its slider; together, or one at a
+                // time.
+                VerticalLayout {
+                    visible: root.tab == 4;
+                    padding-top: 12px;
+                    spacing: 10px;
+                    alignment: start;
+                    HorizontalLayout {
+                        spacing: 12px;
+                        ButtonGroup {
+                            horizontal: true;
+                            model: ["Rectangle", "Picture", "Animation"];
+                            current-index <=> root.fx-subject;
+                        }
+                        Rectangle { horizontal-stretch: 1; }
+                    }
+                    // The stage: the subject in the middle.
+                    Rectangle {
+                        height: 200px;
+                        border-radius: Style.control-radius;
+                        border-width: 1px;
+                        border-color: Palette.border;
+                        background: Palette.alternate-background;
+                        clip: true;
+                        subject := Rectangle {
+                            width: 150px;
+                            height: 110px;
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                            background: root.fx-subject == 0 ? #6366f1 : #ffffff;
+                            border-radius: root.fx-round ? root.fx-radius * 1px : 0px;
+                            border-width: root.fx-border ? root.fx-border-width * 1px : 0px;
+                            border-color: #1e1b4b;
+                            rotation: root.fx-rotate ? root.fx-angle : 0;
+                            scale: root.fx-scale ? root.fx-zoom : 1;
+                            blur: root.fx-blur ? root.fx-blurring * 1px : 0px;
+                            opacity: root.fx-fade ? root.fx-opacity : 1;
+                            drop-shadow-offset-y: root.fx-shadow ? root.fx-shadow-size * 0.4px : 0px;
+                            drop-shadow-blur: root.fx-shadow ? root.fx-shadow-size * 1px : 0px;
+                            drop-shadow-color: root.fx-shadow ? #0f172a80 : #00000000;
+                            animate rotation, scale, opacity, border-radius, border-width, blur { duration: 120ms; }
+
+                            Text {
+                                visible: root.fx-subject == 0;
+                                text: "zigulee";
+                                color: white;
+                                font-size: 26px;
+                                font-weight: 700;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                            // Inside the border, clear of the round corners.
+                            Image {
+                                visible: root.fx-subject == 1;
+                                x: parent.border-width + parent.border-radius * 0.3;
+                                y: self.x;
+                                width: parent.width - 2 * self.x;
+                                height: parent.height - 2 * self.x;
+                                source: @image-url("images/landscape.svg");
+                                image-fit: cover;
+                            }
+                            AnimatedImage {
+                                visible: root.fx-subject == 2;
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                                width: 64px;
+                                height: 64px;
+                                source: @image-url("images/spinner.gif");
+                            }
+                            // The tint: a color over all of it.
+                            Rectangle {
+                                visible: root.fx-tint;
+                                border-radius: parent.border-radius;
+                                background: #f59e0b80;
+                            }
+                        }
+                    }
+                    // The effects, two columns: a box to switch each on, a
+                    // slider to set it.
+                    GridLayout {
+                        spacing: 8px;
+                        Row {
+                            HorizontalLayout {
+                                spacing: 6px;
+                                CheckBox { text: "Rotate"; min-width: 92px; checked <=> root.fx-rotate; }
+                                Slider { enabled: root.fx-rotate; minimum: -180; maximum: 180; value <=> root.fx-angle; }
+                            }
+                            HorizontalLayout {
+                                spacing: 6px;
+                                fx-scale-box := CheckBox { text: "Scale"; min-width: 92px; checked <=> root.fx-scale; }
+                                fx-zoom-slider := Slider { enabled: root.fx-scale; minimum: 0.4; maximum: 1.6; value <=> root.fx-zoom; }
+                            }
+                        }
+                        Row {
+                            HorizontalLayout {
+                                spacing: 6px;
+                                CheckBox { text: "Corners"; min-width: 92px; checked <=> root.fx-round; }
+                                Slider { enabled: root.fx-round; minimum: 0; maximum: 55; value <=> root.fx-radius; }
+                            }
+                            HorizontalLayout {
+                                spacing: 6px;
+                                CheckBox { text: "Border"; min-width: 92px; checked <=> root.fx-border; }
+                                Slider { enabled: root.fx-border; minimum: 1; maximum: 14; value <=> root.fx-border-width; }
+                            }
+                        }
+                        Row {
+                            HorizontalLayout {
+                                spacing: 6px;
+                                CheckBox { text: "Shadow"; min-width: 92px; checked <=> root.fx-shadow; }
+                                Slider { enabled: root.fx-shadow; minimum: 2; maximum: 40; value <=> root.fx-shadow-size; }
+                            }
+                            HorizontalLayout {
+                                spacing: 6px;
+                                fx-blur-box := CheckBox { text: "Blur"; min-width: 92px; checked <=> root.fx-blur; }
+                                Slider { enabled: root.fx-blur; minimum: 0.5; maximum: 10; value <=> root.fx-blurring; }
+                            }
+                        }
+                        Row {
+                            HorizontalLayout {
+                                spacing: 6px;
+                                CheckBox { text: "Fade"; min-width: 92px; checked <=> root.fx-fade; }
+                                Slider { enabled: root.fx-fade; minimum: 0.1; maximum: 1; value <=> root.fx-opacity; }
+                            }
+                            HorizontalLayout {
+                                spacing: 6px;
+                                CheckBox { text: "Tint"; min-width: 92px; checked <=> root.fx-tint; }
+                                Rectangle { horizontal-stretch: 1; }
+                            }
+                        }
+                    }
+                    HorizontalLayout {
+                        spacing: 12px;
+                        Rectangle { horizontal-stretch: 1; }
+                        fx-reset-button := Button {
+                            text: "Reset";
+                            clicked => { root.fx-reset(); }
+                        }
+                    }
+                }
+
+                // Charts.
+                VerticalLayout {
+                    visible: root.tab == 5;
+                    padding-top: 12px;
+                    spacing: 10px;
+                    Text {
+                        text: bars.hovered-index >= 0 ? "Week \{bars.hovered-index + root.chart-week + 1}: \{round(root.sales(bars.hovered-index))} sold"
+                            : root.chart-picked >= 0 ? "Picked week \{root.chart-picked + root.chart-week + 1}" : "Sales by week, and the target";
+                        font-size: 13px;
+                        color: Palette.foreground;
+                    }
+                    HorizontalLayout {
+                        height: 160px;
+                        spacing: 8px;
+                        // The values of the grid lines, beside them.
+                        Rectangle {
+                            width: 28px;
+                            for k in 5: Text {
+                                y: k * (parent.height / 4) - 7px;
+                                width: parent.width;
+                                height: 14px;
+                                text: "\{round(bars.shown-maximum - k * (bars.shown-maximum - bars.shown-minimum) / 4)}";
+                                horizontal-alignment: right;
+                                font-size: 10px;
+                                color: Palette.secondary-foreground;
+                            }
+                        }
+                        Rectangle {
+                            horizontal-stretch: 1;
+                            bars := BarChart {
+                                values: [root.sales(0), root.sales(1), root.sales(2), root.sales(3), root.sales(4), root.sales(5), root.sales(6), root.sales(7)];
+                                colors: [Palette.accent-background];
+                                grid-lines: 4;
+                                border-radius: 3px;
+                                clicked(i) => { root.chart-picked = i; }
+                            }
+                            // On the bars' scale, its dots over their middles
+                            // (the line is inset by half a dot).
+                            LineChart {
+                                x: bars.width / 16 - 3px;
+                                width: bars.width * 7 / 8 + 6px;
+                                values: [24, 26, 28, 31, 33, 36, 38, 41];
+                                minimum: bars.shown-minimum;
+                                maximum: bars.shown-maximum;
+                                color: #f59e0b;
+                                point-size: 6px;
+                            }
+                        }
+                    }
+                    HorizontalLayout {
+                        height: 130px;
+                        spacing: 16px;
+                        Rectangle {
+                            width: 130px;
+                            pie := PieChart {
+                                values: [root.share(0), root.share(1), root.share(2), root.share(3)];
+                                colors: [root.channel-color(0), root.channel-color(1), root.channel-color(2), root.channel-color(3)];
+                                hole: 0.55;
+                            }
+                            Text {
+                                text: pie.hovered-index >= 0 ? "\{root.share(pie.hovered-index)}%" : "Sales";
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                font-size: 15px;
+                                font-weight: 700;
+                                color: Palette.foreground;
+                            }
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            spacing: 6px;
+                            for i in 4: HorizontalLayout {
+                                spacing: 8px;
+                                Rectangle {
+                                    width: 12px;
+                                    height: 12px;
+                                    border-radius: 3px;
+                                    background: root.channel-color(i);
+                                }
+                                Text {
+                                    text: "\{root.channel(i)} \{root.share(i)}%";
+                                    font-size: 12px;
+                                    font-weight: pie.hovered-index == i ? 700 : 400;
+                                    color: Palette.foreground;
+                                }
+                            }
+                        }
+                    }
+                    HorizontalLayout {
+                        Rectangle { horizontal-stretch: 1; }
+                        chart-next := Button {
+                            text: "Next week";
+                            clicked => {
+                                root.chart-week += 1;
+                                root.chart-picked = -1;
+                            }
+                        }
+                    }
+                }
+            }
+
+            Text {
+                text: "Tab: focus · wheel: scroll · right click: menu · Esc: close";
+                wrap: word-wrap;
+                font-family: "JetBrains Mono";
+                font-size: 11px;
+                color: Palette.secondary-foreground;
+            }
+        }
+    }
+}

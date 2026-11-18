@@ -1,0 +1,77 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+import { Palette } from "palette.zge";
+import { Style } from "style.zge";
+
+// A push button. `primary` uses the accent color. Space or Return clicks
+// it when it has keyboard focus.
+export component Button inherits Rectangle {
+    var in <string> text;
+    var in <bool> enabled: true;
+    var in <bool> primary;
+    var out <bool> pressed: touch.pressed;
+    var out <bool> has-hover: touch.has-hover;
+    var out <bool> has-focus: fs.has-focus;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-enabled: root.enabled;
+    accessible-action-default => {
+        if root.enabled {
+            root.clicked();
+        }
+    }
+
+    min-width: max(Style.control-height, label.preferred-width + 24px);
+    min-height: Style.control-height;
+    preferred-width: max(96px, label.preferred-width + 40px);
+    preferred-height: Style.control-height;
+    max-height: Style.control-height;
+
+    border-radius: Style.button-radius;
+    border-width: primary ? 0px : Style.button-border-width;
+    border-color: Palette.border;
+    background: !enabled ? Palette.control-disabled
+        : primary ? (touch.pressed ? Palette.accent-pressed : touch.has-hover ? Palette.accent-hover : Palette.accent-background)
+        : touch.pressed ? Palette.control-pressed : touch.has-hover ? Palette.control-hover : Palette.control-background;
+    animate background { duration: 80ms; }
+    drop-shadow-offset-y: Style.control-shadow-y;
+    drop-shadow-blur: Style.control-shadow-blur;
+    drop-shadow-color: root.enabled ? Palette.control-shadow : #00000000;
+
+    Rectangle {
+        x: 0px - Style.focus-ring-offset;
+        y: 0px - Style.focus-ring-offset;
+        width: parent.width + 2 * Style.focus-ring-offset;
+        height: parent.height + 2 * Style.focus-ring-offset;
+        border-radius: Style.button-radius + Style.focus-ring-offset;
+        border-width: Style.focus-ring-width;
+        border-color: Palette.focus-ring;
+        visible: fs.has-focus;
+    }
+    label := Text {
+        text: root.text;
+        font-size: Style.font-size;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        color: !root.enabled ? Palette.disabled-foreground
+            : root.primary ? Palette.accent-foreground : Palette.foreground;
+    }
+    // Below the TouchArea: focus comes from the keyboard (Tab), not clicks.
+    fs := FocusScope {
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if event.text == Key.Space || event.text == Key.Return {
+                root.clicked();
+                return accept;
+            }
+            return reject;
+        }
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+}

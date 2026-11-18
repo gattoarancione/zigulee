@@ -1,0 +1,21 @@
+<!doctype html>
+<!-- Copyright (c) 2026 Claudio Russo -->
+<!-- SPDX-License-Identifier: MIT -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>zigulee gallery</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #f3f3f3; }
+  canvas { display: block; width: 460px; height: 640px; margin: 24px auto; outline: none; box-shadow: 0 2px 12px #0002; }
+</style>
+</head>
+<body>
+<canvas id="app"></canvas>
+<script type="module">
+  import { start } from "./zigulee.js";
+  start({ wasm: fetch("gallery.wasm"), canvas: document.getElementById("app") });
+</script>
+</body>
+</html>

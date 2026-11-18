@@ -1,0 +1,43 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+import { Palette, RadioButton, ButtonGroup, Pane, Frame, GroupBox, ToolBar, ToolButton, ToolSeparator } from "std-widgets.zge";
+
+// Radio buttons, containers, a tool bar.
+export component MoreWidgets inherits Window {
+    width: 300px;
+    height: 360px;
+    var in-out <int> size: 1;
+    var in-out <string> chosen-size;
+    var in-out <bool> bold;
+    var in-out <int> saves;
+    var in-out <bool> left: true;
+    background: Palette.background;
+
+    VerticalLayout {
+        alignment: start;
+        bar := ToolBar {
+            save := ToolButton { text: "Save"; clicked => { root.saves += 1; } }
+            ToolSeparator {}
+            bold-button := ToolButton { text: "B"; checkable: true; checked <=> root.bold; }
+        }
+        Pane {
+            GroupBox {
+                text: "Size";
+                sizes := ButtonGroup {
+                    model: ["Small", "Medium", "Large"];
+                    current-index <=> root.size;
+                    selected(i) => { root.chosen-size = self.model[i]; }
+                }
+            }
+            row := ButtonGroup {
+                horizontal: true;
+                model: ["A", "B"];
+            }
+            Frame {
+                align-left := RadioButton { text: "Left"; checked: root.left; toggled => { root.left = true; } }
+                align-right := RadioButton { text: "Right"; checked: !root.left; toggled => { root.left = false; } }
+            }
+        }
+    }
+}

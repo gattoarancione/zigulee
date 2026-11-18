@@ -1,0 +1,8 @@
+.zig-cache/
+zig-out/
+tests/golden/failures/
+zig-pkg/
+editors/vscode/node_modules/
+*.vsix
+editors/vscode/bin/
+.DS_Store

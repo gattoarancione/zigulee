@@ -1,0 +1,46 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// Letter spacing, text fitted to its box, wrapping and alignment.
+import { LineEdit, TextEdit } from "std-widgets.zge";
+
+export component TextFit inherits Window {
+    width: 240px;
+    height: 400px;
+    var in-out <length> spacing: 2px;
+    var in-out <length> box-width: 60px;
+
+    VerticalLayout {
+        Text { text: "Spaced"; font-size: 14px; letter-spacing: root.spacing; }
+        Text { text: "Narrow"; font-size: 14px; letter-spacing: -1px; }
+        fitted := Text {
+            text: "Fitted text";
+            font-size: 40px;
+            minimum-font-size: 8px;
+            font-size-mode: FontSizeMode.horizontal-fit;
+            width: root.box-width;
+            height: 40px;
+        }
+        Text {
+            text: "Both ways";
+            font-size: 40px;
+            font-size-mode: FontSizeMode.fit;
+            width: 200px;
+            height: 20px;
+        }
+        TextInput { text: "field"; letter-spacing: root.spacing; }
+        StyledText { text: "**rich** text"; letter-spacing: root.spacing; }
+        StyledText { text: "a long line of **rich** text, not wrapped but cut at the edge of the window"; wrap: no-wrap; }
+        StyledText { text: "centered\n\nrich *text*"; horizontal-alignment: center; vertical-alignment: bottom; height: 50px; }
+        TextInput { text: "right"; horizontal-alignment: right; }
+        LineEdit { text: "42"; horizontal-alignment: right; }
+        TextEdit { text: "short\nlonger line"; horizontal-alignment: center; }
+        StyledText {
+            text: "# Fitted\n\nrich text, shrunk to fit";
+            font-size: 30px;
+            font-size-mode: FontSizeMode.fit;
+            minimum-font-size: 6px;
+            height: 30px;
+        }
+    }
+}

@@ -1,0 +1,35 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// Canvas: drawing from code, painted again when what it reads changes.
+
+export component Drawing inherits Window {
+    width: 200px;
+    height: 100px;
+    background: #ffffff;
+    // How far the bar goes, of the canvas's width.
+    var in-out <float> level: 0.25;
+    Canvas {
+        paint => {
+            self.fill-style = #dc2626;
+            self.fill-rect(0, 0, self.width * root.level, 20px);
+            // A green disc at 150, 60, cut to its left half.
+            self.save();
+            self.begin-path();
+            self.rect(100px, 0, 50px, 100px);
+            self.clip();
+            self.begin-path();
+            self.arc(150px, 60px, 30px, 0, 360, false);
+            self.fill-style = #16a34a;
+            self.fill();
+            self.restore();
+            // A blue square, turned and faded.
+            self.global-alpha = 0.5;
+            self.translate(40px, 60px);
+            self.rotate(45);
+            self.fill-style = #0000ff;
+            self.fill-rect(-10px, -10px, 20px, 20px);
+            self.global-alpha = 1;
+        }
+    }
+}

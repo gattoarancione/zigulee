@@ -1,0 +1,36 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// The standard widgets: `import { Button } from "std-widgets.zge";`. Their
+// colors (Palette) and sizes (Style) come from the style being built.
+
+export { Palette } from "palette.zge";
+export { Style } from "style.zge";
+export { Button } from "button.zge";
+export { CheckBox, Switch } from "checkbox.zge";
+export { Slider } from "slider.zge";
+export { ProgressIndicator } from "progress.zge";
+export { LineEdit } from "lineedit.zge";
+export { TextEdit } from "textedit.zge";
+export { ScrollView, ListView, GridView, ScrollBar } from "scrollview.zge";
+export { TabWidget } from "tabwidget.zge";
+export { SpinBox } from "spinbox.zge";
+export { Spinner } from "spinner.zge";
+export { ComboBox } from "combobox.zge";
+export { StandardListView } from "listview.zge";
+export { DatePicker } from "datepicker.zge";
+export { StandardTableView, TableView } from "tableview.zge";
+export { Sound, Music } from "audio.zge";
+export { VideoPlayer } from "videoplayer.zge";
+export { Tumbler } from "tumbler.zge";
+export { ToolTip } from "tooltip.zge";
+export { Menu, MenuBar, MenuBarItem, MenuItem } from "menu.zge";
+export { Dialog, MessageDialog } from "dialog.zge";
+export { RadioButton, ButtonGroup } from "radiobutton.zge";
+export { Pane, Frame, GroupBox } from "containers.zge";
+export { ToolBar, ToolButton, ToolSeparator } from "toolbar.zge";
+export { PageIndicator } from "pageindicator.zge";
+export { RangeSlider, Dial } from "rangeslider.zge";
+export { TreeView, TreeItem } from "treeview.zge";
+export { Drawer, DrawerEdge } from "drawer.zge";
+export { VirtualKeyboard } from "virtualkeyboard.zge";

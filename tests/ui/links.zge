@@ -1,0 +1,20 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// Links opened with the system, as statements and as values.
+export component LinksApp inherits Window {
+    width: 100px;
+    height: 100px;
+    var in <string> page: "https://ziglang.org";
+    var in-out <bool> opened;
+
+    public function visit() {
+        open-url(root.page);
+    }
+    public function try-bad() {
+        root.opened = open-url("not a url");
+    }
+    public function try-good() {
+        root.opened = open-url("mailto:someone@example.com");
+    }
+}

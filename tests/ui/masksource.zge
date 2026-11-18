@@ -1,0 +1,48 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// Masks drawn by elements: a picture shown through a circle (QML's
+// OpacityMask with an item as maskSource), the circle hidden; and an
+// inverted one, a hole where the circle is.
+
+export component MaskSource inherits Window {
+    width: 200px;
+    height: 100px;
+    background: #ffffff;
+    var in-out <length> size: 60px;
+
+    shown := Rectangle {
+        x: 10px;
+        y: 10px;
+        width: 80px;
+        height: 80px;
+        background: #16a34a;
+        mask-source: disc;
+        disc := Rectangle {
+            visible: false;
+            x: (80px - root.size) / 2;
+            y: (80px - root.size) / 2;
+            width: root.size;
+            height: root.size;
+            border-radius: root.size / 2;
+            background: #000000;
+        }
+    }
+    holed := Rectangle {
+        x: 110px;
+        y: 10px;
+        width: 80px;
+        height: 80px;
+        background: #2563eb;
+        mask-source: hole;
+        mask-inverted: true;
+    }
+    hole := Rectangle {
+        visible: false;
+        x: 20px;
+        y: 20px;
+        width: 40px;
+        height: 40px;
+        background: #000000;
+    }
+}

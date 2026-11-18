@@ -1,0 +1,21 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+import { LineEdit, VirtualKeyboard } from "std-widgets.zge";
+
+// A field typed into from the on-screen keyboard below it.
+export component Keyboard inherits Window {
+    width: 400px;
+    height: 300px;
+    var out <string> typed: field.text;
+    var out <bool> open: kb.open;
+    var out <int> accepted;
+
+    VerticalLayout {
+        field := LineEdit {
+            accepted => { root.accepted += 1; }
+        }
+        Rectangle {}
+        kb := VirtualKeyboard {}
+    }
+}

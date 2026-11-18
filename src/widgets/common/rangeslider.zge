@@ -1,0 +1,242 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+import { Palette } from "palette.zge";
+import { Style } from "style.zge";
+
+// A slider with two thumbs: a range from `first-value` to `second-value`
+// (never crossing). A press moves the nearer thumb, and drags it.
+export component RangeSlider inherits Empty {
+    var in <float> minimum: 0;
+    var in <float> maximum: 100;
+    // Values snap to multiples of `step` from `minimum` (0: no snapping).
+    var in <float> step: 0;
+    var in <bool> enabled: true;
+    var in-out <float> first-value: 25;
+    var in-out <float> second-value: 75;
+    // Called when the user changes either value.
+    callback changed(float, float);
+
+    accessible-role: slider;
+    accessible-value: "\{root.first-value} to \{root.second-value}";
+    accessible-value-minimum: root.minimum;
+    accessible-value-maximum: root.maximum;
+    accessible-enabled: root.enabled;
+
+    // The thumb dragged: 0 the first, 1 the second; chosen for the press at
+    // `chosen-at` (moves come before change handlers run).
+    var <int> dragged;
+    var <length> chosen-at: -1px;
+    var <length> span: root.width - Style.slider-thumb;
+
+    function snap(v: float) -> float {
+        return max(root.minimum, min(root.maximum,
+            root.step > 0 ? root.minimum + round((v - root.minimum) / root.step) * root.step : v));
+    }
+    function ratio(v: float) -> float {
+        return root.maximum > root.minimum ? max(0, min(1, (v - root.minimum) / (root.maximum - root.minimum))) : 0;
+    }
+    function value-at(x: length) -> float {
+        return root.minimum + (x - Style.slider-thumb / 2) / root.span * (root.maximum - root.minimum);
+    }
+    // The nearer thumb to where the press was (where they meet: the one
+    // on the side pressed).
+    function choose() {
+        if root.chosen-at != touch.pressed-x {
+            root.chosen-at = touch.pressed-x;
+            let v = root.value-at(touch.pressed-x);
+            let to-first = abs(v - root.first-value);
+            let to-second = abs(v - root.second-value);
+            root.dragged = to-first < to-second || (to-first == to-second && v < root.first-value) ? 0 : 1;
+        }
+    }
+    function drag-to(x: length) {
+        root.choose();
+        let v = root.snap(root.value-at(x));
+        if root.dragged == 0 {
+            v = min(v, root.second-value);
+            if v != root.first-value {
+                root.first-value = v;
+                root.changed(root.first-value, root.second-value);
+            }
+        } else {
+            v = max(v, root.first-value);
+            if v != root.second-value {
+                root.second-value = v;
+                root.changed(root.first-value, root.second-value);
+            }
+        }
+    }
+
+    min-width: 80px;
+    min-height: Style.control-height;
+    preferred-width: 200px;
+    preferred-height: Style.control-height;
+    max-height: Style.control-height;
+
+    track := Rectangle {
+        x: Style.slider-thumb / 2;
+        y: (parent.height - Style.slider-track) / 2;
+        width: root.span;
+        height: Style.slider-track;
+        border-radius: Style.slider-track / 2;
+        background: root.enabled ? Palette.track : Palette.disabled-foreground;
+    }
+    // The range.
+    Rectangle {
+        x: track.x + root.span * root.ratio(root.first-value);
+        y: track.y;
+        width: root.span * (root.ratio(root.second-value) - root.ratio(root.first-value));
+        height: Style.slider-track;
+        background: root.enabled ? Palette.accent-background : Palette.disabled-foreground;
+    }
+    for t in 2 : Rectangle {
+        x: root.span * root.ratio(t == 0 ? root.first-value : root.second-value);
+        y: (parent.height - Style.slider-thumb) / 2;
+        width: Style.slider-thumb;
+        height: Style.slider-thumb;
+        border-radius: Style.slider-thumb / 2;
+        border-width: Style.slider-thumb-border-width;
+        border-color: Palette.border;
+        background: Palette.slider-thumb;
+        Rectangle {
+            x: (parent.width - Style.slider-dot) / 2;
+            y: (parent.height - Style.slider-dot) / 2;
+            width: Style.slider-dot;
+            height: Style.slider-dot;
+            border-radius: Style.slider-dot / 2;
+            background: root.enabled ? Palette.accent-background : Palette.disabled-foreground;
+        }
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        // A click without a move: the nearer thumb jumps there.
+        changed pressed => {
+            if self.pressed {
+                root.drag-to(self.mouse-x);
+            } else {
+                root.chosen-at = -1px;
+            }
+        }
+        moved => {
+            if self.pressed {
+                root.drag-to(self.mouse-x);
+            }
+        }
+    }
+}
+
+// A round knob: its value from `minimum` to `maximum`, turned by dragging
+// up (more) or down (less), or by the arrow keys. Its pointer
+// goes from the lower left (minimum) round to the lower right (maximum).
+export component Dial inherits Empty {
+    var in <float> minimum: 0;
+    var in <float> maximum: 100;
+    // Values snap to multiples of `step` from `minimum` (0: no snapping).
+    var in <float> step: 0;
+    var in <bool> enabled: true;
+    var in-out <float> value;
+    var out <bool> has-focus: fs.has-focus;
+    // Called when the user changes the value.
+    callback changed(float);
+
+    accessible-role: slider;
+    accessible-value: "\{root.value}";
+    accessible-value-minimum: root.minimum;
+    accessible-value-maximum: root.maximum;
+    accessible-value-step: root.step;
+    accessible-enabled: root.enabled;
+    accessible-action-increment => { root.set-value(root.value + root.nudge); }
+    accessible-action-decrement => { root.set-value(root.value - root.nudge); }
+
+    var <float> nudge: root.step > 0 ? root.step : (root.maximum - root.minimum) / 100;
+    // The value when the press at `start-at` began (moves come before
+    // change handlers run).
+    var <float> drag-start;
+    var <length> start-at: -1px;
+    var <float> ratio: root.maximum > root.minimum ? max(0, min(1, (root.value - root.minimum) / (root.maximum - root.minimum))) : 0;
+    var <length> size: min(root.width, root.height);
+
+    function set-value(v: float) {
+        let snapped = max(root.minimum, min(root.maximum,
+            root.step > 0 ? root.minimum + round((v - root.minimum) / root.step) * root.step : v));
+        if snapped != root.value {
+            root.value = snapped;
+            root.changed(snapped);
+        }
+    }
+
+    min-width: 40px;
+    min-height: 40px;
+    preferred-width: 64px;
+    preferred-height: 64px;
+
+    knob := Rectangle {
+        x: (parent.width - root.size) / 2;
+        y: (parent.height - root.size) / 2;
+        width: root.size;
+        height: root.size;
+        border-radius: root.size / 2;
+        border-width: Style.slider-thumb-border-width + 1px;
+        border-color: root.enabled ? Palette.strong-border : Palette.disabled-foreground;
+        background: touch.pressed ? Palette.control-pressed : touch.has-hover && root.enabled ? Palette.control-hover : Palette.control-background;
+
+        // The pointer: a line from the middle, turned from -135° to 135°.
+        Rectangle {
+            x: (parent.width - 4px) / 2;
+            y: 4px;
+            width: 4px;
+            height: parent.height / 2 - 4px;
+            border-radius: 2px;
+            background: root.enabled ? Palette.accent-background : Palette.disabled-foreground;
+            rotation: -135 + 270 * root.ratio;
+            transform-origin-y: parent.height / 2 - 4px;
+        }
+        Rectangle {
+            x: 0px - Style.focus-ring-offset;
+            y: 0px - Style.focus-ring-offset;
+            width: parent.width + 2 * Style.focus-ring-offset;
+            height: parent.height + 2 * Style.focus-ring-offset;
+            border-radius: parent.width / 2 + Style.focus-ring-offset;
+            border-width: Style.focus-ring-width;
+            border-color: Palette.focus-ring;
+            visible: fs.has-focus;
+        }
+    }
+    fs := FocusScope {
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if event.text == Key.RightArrow || event.text == Key.UpArrow {
+                root.set-value(root.value + root.nudge);
+                return accept;
+            }
+            if event.text == Key.LeftArrow || event.text == Key.DownArrow {
+                root.set-value(root.value - root.nudge);
+                return accept;
+            }
+            if event.text == Key.Home { root.set-value(root.minimum); return accept; }
+            if event.text == Key.End { root.set-value(root.maximum); return accept; }
+            return reject;
+        }
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        changed pressed => {
+            if self.pressed {
+                fs.focus();
+            } else {
+                root.start-at = -1px;
+            }
+        }
+        // 200 px up: the whole range.
+        moved => {
+            if self.pressed {
+                if root.start-at != self.pressed-y {
+                    root.start-at = self.pressed-y;
+                    root.drag-start = root.value;
+                }
+                root.set-value(root.drag-start + (self.pressed-y - self.mouse-y) / 200px * (root.maximum - root.minimum));
+            }
+        }
+    }
+}

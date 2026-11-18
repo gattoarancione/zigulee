@@ -1,0 +1,160 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+import { Palette } from "palette.zge";
+
+// A video with controls: play and pause (the button, or a click on the
+// picture), the time, and a bar to seek with (the picture follows the
+// pointer while dragging; it plays on from where it is let go, if it was
+// playing). The controls stay while paused or pointed at, and hide while it
+// plays.
+export component VideoPlayer inherits Rectangle {
+    // An embedded video (`@video-url`), or a file read while playing.
+    var in <video> source;
+    var in <string> source-file;
+    var in <ImageFit> image-fit: contain;
+    var in <bool> controls: true;
+    var in-out <bool> playing <=> video.playing;
+    var in-out <bool> paused <=> video.paused;
+    var in-out <bool> loop <=> video.loop;
+    var in-out <float> volume <=> video.volume;
+    var out <duration> position: video.position;
+    var out <duration> duration: video.duration;
+    callback finished();
+
+    public function play() { video.play(); }
+    public function stop() { video.stop(); }
+
+    // Plays, pauses, or goes on.
+    function toggle() {
+        if !root.playing {
+            video.play();
+        } else {
+            video.paused = !video.paused;
+        }
+    }
+    function clock(s: int) -> string {
+        return "\{floor(s / 60)}:\{mod(s, 60) < 10 ? "0" : ""}\{mod(s, 60)}";
+    }
+    // Where the pointer is on the seek bar, 0 to 1.
+    function pointed() -> float {
+        return max(0, min(1, seek.mouse-x / seek.width));
+    }
+    function seek-to-pointer() {
+        if root.duration > 0ms {
+            video.position = root.pointed() * root.duration;
+        }
+    }
+    // Playing when the seek bar was pressed (it plays on when let go).
+    var <bool> resume;
+
+    var <bool> running: root.playing && !root.paused;
+    var <bool> shown: root.controls && (!root.running || area.has-hover || button.has-hover || seek.has-hover || seek.pressed);
+    var <float> ratio: seek.pressed ? root.pointed() : (root.duration > 0ms ? root.position / root.duration : 0);
+
+    background: #000000;
+    preferred-width: 480px;
+    preferred-height: 270px;
+    accessible-role: group;
+
+    video := Video {
+        width: parent.width;
+        height: parent.height;
+        image-fit: root.image-fit;
+        source: root.source;
+        source-file: root.source-file;
+        finished => { root.finished(); }
+    }
+
+    area := TouchArea {
+        clicked => { root.toggle(); }
+    }
+
+    bar := Rectangle {
+        y: parent.height - self.height;
+        width: parent.width;
+        height: 40px;
+        background: #000000a0;
+        opacity: root.shown ? 1 : 0;
+        animate opacity { duration: 200ms; }
+
+        button := TouchArea {
+            x: 6px;
+            y: 6px;
+            width: 28px;
+            height: 28px;
+            accessible-role: button;
+            accessible-label: root.running ? "Pause" : "Play";
+            clicked => { root.toggle(); }
+
+            Path {
+                x: 8px;
+                y: 7px;
+                width: 13px;
+                height: 14px;
+                visible: !root.running;
+                commands: "M 0 0 L 13 7 L 0 14 Z";
+                fill: #ffffff;
+            }
+            Rectangle { x: 8px; y: 7px; width: 4px; height: 14px; visible: root.running; background: #ffffff; }
+            Rectangle { x: 16px; y: 7px; width: 4px; height: 14px; visible: root.running; background: #ffffff; }
+        }
+
+        Text {
+            x: 42px;
+            width: 90px;
+            height: parent.height;
+            vertical-alignment: center;
+            font-size: 12px;
+            color: #ffffff;
+            text: root.clock(floor((seek.pressed ? root.pointed() * root.duration : root.position) / 1s)) + " / " + root.clock(floor(root.duration / 1s));
+        }
+
+        // The seek bar: a track, what has played, a knob.
+        Rectangle {
+            x: seek.x;
+            y: (parent.height - self.height) / 2;
+            width: seek.width;
+            height: 4px;
+            border-radius: 2px;
+            background: #ffffff55;
+        }
+        Rectangle {
+            x: seek.x;
+            y: (parent.height - self.height) / 2;
+            width: seek.width * root.ratio;
+            height: 4px;
+            border-radius: 2px;
+            background: Palette.accent-background;
+        }
+        Rectangle {
+            x: seek.x + seek.width * root.ratio - self.width / 2;
+            y: (parent.height - self.height) / 2;
+            width: 12px;
+            height: 12px;
+            border-radius: 6px;
+            background: #ffffff;
+            visible: seek.has-hover || seek.pressed;
+        }
+        seek := TouchArea {
+            x: 140px;
+            width: max(0px, parent.width - self.x - 14px);
+            accessible-role: slider;
+            accessible-label: "Position";
+            changed pressed => {
+                if self.pressed {
+                    // Paused while dragging: the picture follows, quietly.
+                    root.resume = root.running;
+                    if root.running { video.paused = true; }
+                    root.seek-to-pointer();
+                } else {
+                    root.seek-to-pointer();
+                    if root.resume { video.paused = false; }
+                }
+            }
+            moved => {
+                if self.pressed { root.seek-to-pointer(); }
+            }
+        }
+    }
+}

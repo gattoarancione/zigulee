@@ -1,0 +1,82 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// Long lists: a list in sections, a thousand rows recycled, a table of
+// cells.
+import { ListView, TableView } from "std-widgets.zge";
+
+struct Contact {
+    name: string,
+    group: string,
+    born: int,
+}
+
+export component Lists inherits Window {
+    width: 300px;
+    height: 330px;
+    background: #ffffff;
+    var in <[Contact]> contacts: [
+        { name: "Ada", group: "A", born: 1815 },
+        { name: "Alan", group: "A", born: 1912 },
+        { name: "Anita", group: "A", born: 1947 },
+        { name: "Barbara", group: "B", born: 1939 },
+        { name: "Bjarne", group: "B", born: 1950 },
+        { name: "Charles", group: "C", born: 1791 },
+        { name: "Claude", group: "C", born: 1916 },
+        { name: "Dennis", group: "D", born: 1941 },
+        { name: "Donald", group: "D", born: 1938 },
+        { name: "Edsger", group: "E", born: 1930 },
+    ];
+    var out <int> picked: -1;
+    var out <string> cell;
+
+    VerticalLayout {
+        people := ListView {
+            height: 120px;
+            sections: root.contacts.map(c => c.group);
+            for c[i] in root.contacts : Rectangle {
+                height: 24px;
+                Text {
+                    x: 12px;
+                    text: c.name;
+                    vertical-alignment: center;
+                }
+            }
+        }
+        numbers := ListView {
+            height: 80px;
+            for i in 1000 : Rectangle {
+                height: 20px;
+                background: i == root.picked ? #2563eb : mod(i, 2) == 0 ? #f1f5f9 : #ffffff;
+                Text {
+                    x: 12px;
+                    text: "Row " + i;
+                    vertical-alignment: center;
+                }
+                TouchArea { clicked => { root.picked = i; } }
+            }
+        }
+        table := TableView {
+            height: 130px;
+            columns: ["Name", "Group", "Born"];
+            column-widths: [120px, 70px, 80px];
+            for c in root.contacts : TableRow {
+                Text {
+                    text: c.name;
+                    vertical-alignment: center;
+                    TouchArea { clicked => { root.cell = c.name; } }
+                }
+                Rectangle {
+                    background: #e0e7ff;
+                    Text { text: c.group; }
+                }
+                Text {
+                    text: "" + c.born;
+                    horizontal-alignment: right;
+                    vertical-alignment: center;
+                    TouchArea { clicked => { root.cell = "" + c.born; } }
+                }
+            }
+        }
+    }
+}

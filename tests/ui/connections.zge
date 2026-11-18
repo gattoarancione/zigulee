@@ -1,0 +1,69 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// Handlers for other elements' callbacks: `x.callback => { }` and
+// Connections, added to the callbacks' own handlers.
+
+export global Bus {
+    callback ping(int);
+    var out <int> last;
+    ping(n) => { last = n; }
+}
+
+// Only callbacks: nothing to set up or free.
+export global Signals {
+    callback idle();
+    callback woke(int) -> int;
+}
+
+component Counter inherits Rectangle {
+    callback bumped(int) -> int;
+    var in-out <int> count;
+    var out <int> answered;
+    TouchArea {
+        clicked => {
+            root.count += 1;
+            root.answered = root.bumped(root.count);
+        }
+    }
+}
+
+export component Conns inherits Window {
+    width: 200px;
+    height: 100px;
+    background: #ffffff;
+    var in-out <bool> listening: true;
+    var out <int> heard;
+    var out <int> heard-all;
+    var out <int> pings;
+
+    HorizontalLayout {
+        counter := Counter {
+            width: 100px;
+            background: #cbd5e1;
+            // Its own handler: its result is the callback's.
+            bumped(n) => { return n * 10; }
+        }
+        TouchArea {
+            clicked => { Bus.ping(5); }
+        }
+    }
+
+    counter.bumped(n) => { heard = n; }
+    Connections {
+        target: counter;
+        enabled: root.listening;
+        bumped(n) => { heard-all += n; }
+    }
+    Connections {
+        target: Bus;
+        ping(n) => { pings += n; }
+    }
+    Connections {
+        target: Signals;
+        idle => { pings += 100; }
+    }
+    Text {
+        text: "\{heard} \{heard-all} \{pings} \{Bus.last} \{counter.answered}";
+    }
+}

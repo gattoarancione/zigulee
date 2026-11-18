@@ -1,0 +1,14 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+import { Theme } from "theme.zge";
+
+export component LibButton inherits Rectangle {
+    var in <string> label;
+    background: Theme.dark ? #333333 : #eeeeee;
+    caption := Text { text: root.label; color: Theme.text; }
+    TouchArea { clicked => { Theme.clicked(); } }
+}
+
+// Not exported: usable inside this file only.
+component Internal {}

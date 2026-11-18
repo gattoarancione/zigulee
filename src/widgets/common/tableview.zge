@@ -1,0 +1,329 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+import { Palette } from "palette.zge";
+import { Style } from "style.zge";
+import { ScrollView } from "scrollview.zge";
+
+// A table of strings: `columns` are the headers, `rows` the cells. Columns
+// share the width unless `column-widths` gives theirs. Clicking a header
+// asks the app to sort by it; the up and down arrows move the current row.
+// With `selection-mode: extended`, the user selects several rows as on
+// desktops (Ctrl- or Cmd-click adds or removes one, Shift-click or Shift
+// and the arrows a range, Ctrl+A or Cmd+A all); with `multiple`, each
+// click (or Space) adds or removes one. `selected-rows` are the rows
+// selected (in `single` mode, the current one). Screen readers see a
+// table: the headers (sorting when pressed), then the rows (selected when
+// pressed), each with its cells.
+export component StandardTableView inherits Rectangle {
+    var in <[string]> columns;
+    var in <[[string]]> rows;
+    var in <[length]> column-widths;
+    var in-out <int> current-row: -1;
+    var in <SelectionMode> selection-mode: single;
+    var out <[int]> selected-rows: sel.selected-rows;
+    var out <int> sort-column: -1;
+    var out <bool> sort-ascending: true;
+    // Called when the user makes a row current.
+    callback current-row-changed(int);
+    // Called when the rows selected change.
+    callback selection-changed();
+    // Called when a header is clicked: sort the rows by that column.
+    callback sort-requested(int, bool);
+
+    public function set-current-row(r: int) {
+        if r >= 0 && r < root.rows.length && r != root.current-row {
+            root.current-row = r;
+            // Keep it in view.
+            if r * 32px < 0px - body.viewport-y {
+                body.viewport-y = 0px - r * 32px;
+            }
+            if (r + 1) * 32px > body.visible-height - body.viewport-y {
+                body.viewport-y = body.visible-height - (r + 1) * 32px;
+            }
+            root.current-row-changed(r);
+        }
+    }
+    public function select-all() { if root.selection-mode != SelectionMode.single { sel.select-all(); } }
+    public function clear-selection() { sel.clear(); }
+    public function set-selected(r: int, on: bool) {
+        if root.selection-mode == SelectionMode.single {
+            if on { root.current-row = r; } else if r == root.current-row { root.current-row = -1; }
+        } else {
+            sel.set-selected(r, on);
+        }
+    }
+    // A click on row `r`, or a key moving to it: with Shift (`extend`) or
+    // Ctrl or Cmd (`toggle`) held.
+    function pick(r: int, extend: bool, toggle: bool) {
+        if r < 0 || r >= root.rows.length { return; }
+        if root.selection-mode == SelectionMode.extended && extend {
+            sel.extend-to(r);
+        } else if root.selection-mode == SelectionMode.multiple || (root.selection-mode == SelectionMode.extended && toggle) {
+            sel.toggle(r);
+        } else {
+            sel.select(r);
+        }
+        root.set-current-row(r);
+    }
+    // The arrow keys: the current row moves (selected, unless in
+    // `multiple` mode; Shift extends the selection).
+    function move-to(r: int, extend: bool) {
+        if r < 0 || r >= root.rows.length { return; }
+        if root.selection-mode == SelectionMode.multiple {
+            root.set-current-row(r);
+        } else {
+            root.pick(r, extend, false);
+        }
+    }
+
+    // In `single` mode, the current row is the selection.
+    changed current-row => {
+        if root.selection-mode == SelectionMode.single { sel.select(root.current-row); }
+    }
+    sel := Selection {
+        count: root.rows.length;
+        changed => { root.selection-changed(); }
+    }
+    public function column-width(c: int) -> length {
+        return root.column-widths.length == root.columns.length ? root.column-widths[c] : (root.width - 2px) / max(1, root.columns.length);
+    }
+    public function column-x(c: int) -> length {
+        return c <= 0 ? 0px : column-x(c - 1) + column-width(c - 1);
+    }
+    function sort-by(c: int) {
+        root.sort-ascending = c == root.sort-column ? !root.sort-ascending : true;
+        root.sort-column = c;
+        root.sort-requested(c, root.sort-ascending);
+    }
+
+    min-width: 100px;
+    min-height: 80px;
+    preferred-width: 400px;
+    preferred-height: 240px;
+    border-radius: Style.control-radius;
+    border-width: 1px;
+    border-color: Palette.border;
+    background: Palette.alternate-background;
+    clip: true;
+    accessible-role: table;
+    accessible-multiselectable: root.selection-mode != SelectionMode.single;
+
+    // Header.
+    for title[c] in root.columns : Rectangle {
+        x: 1px + root.column-x(c) + body.viewport-x;
+        y: 1px;
+        width: root.column-width(c);
+        height: 32px;
+        accessible-role: column-header;
+        accessible-label: title;
+        accessible-value: c != root.sort-column ? ""
+            : root.sort-ascending ? @tr("StandardTableView" => "sorted ascending") : @tr("StandardTableView" => "sorted descending");
+        accessible-action-default => { root.sort-by(c); }
+        background: head-touch.pressed ? Palette.control-pressed : head-touch.has-hover ? Palette.control-hover : Palette.control-background;
+        Text {
+            x: 10px;
+            width: parent.width - 30px;
+            text: title;
+            overflow: elide;
+            font-size: 13px;
+            font-weight: 700;
+            vertical-alignment: center;
+            color: Palette.secondary-foreground;
+        }
+        Path {
+            visible: c == root.sort-column;
+            x: parent.width - 20px;
+            y: (parent.height - 5px) / 2;
+            width: 9px;
+            height: 5px;
+            commands: root.sort-ascending ? "M 0 5 L 4.5 0 L 9 5" : "M 0 0 L 4.5 5 L 9 0";
+            stroke: Palette.secondary-foreground;
+            stroke-width: 1.2px;
+        }
+        Rectangle {
+            x: parent.width - 1px;
+            width: 1px;
+            background: Palette.border;
+        }
+        head-touch := TouchArea {
+            clicked => { root.sort-by(c); }
+        }
+    }
+    Rectangle {
+        y: 33px;
+        height: 1px;
+        background: Palette.border;
+    }
+
+    // Rows.
+    body := ScrollView {
+        x: 0px;
+        y: 34px;
+        width: parent.width;
+        height: parent.height - 34px;
+        border-width: 0px;
+        background: #00000000;
+        ListLayout {
+            viewport-y: body.viewport-y;
+            visible-height: body.visible-height;
+            row-height: 32px;
+            for row[r] in root.rows : Rectangle {
+                height: 32px;
+                accessible-role: table-row;
+                accessible-checked: sel.selected[r];
+                accessible-action-default => { root.pick(r, false, false); }
+                accessible-action-select => {
+                    sel.select(r);
+                    root.set-current-row(r);
+                }
+                accessible-action-set-selected(on) => { root.set-selected(r, on); }
+                background: sel.selected[r] ? Palette.selection-background
+                    : row-touch.has-hover ? Palette.control-hover : #00000000;
+                for cell[c] in row : Text {
+                    accessible-role: table-cell;
+                    x: root.column-x(c) + 10px;
+                    width: root.column-width(c) - 20px;
+                    text: cell;
+                    overflow: elide;
+                    font-size: Style.font-size;
+                    vertical-alignment: center;
+                    color: Palette.foreground;
+                }
+                row-touch := TouchArea {
+                    clicked => {
+                        keys.focus();
+                        root.pick(r, self.modifiers.shift, self.modifiers.control || self.modifiers.meta);
+                    }
+                }
+            }
+        }
+    }
+    keys := FocusScope {
+        x: 0px;
+        y: 0px;
+        width: 0px;
+        height: 0px;
+        key-pressed(event) => {
+            if event.text == Key.UpArrow {
+                root.move-to(max(0, root.current-row - 1), event.modifiers.shift);
+                return accept;
+            }
+            if event.text == Key.DownArrow {
+                root.move-to(root.current-row + 1, event.modifiers.shift);
+                return accept;
+            }
+            if event.text == Key.Space && root.selection-mode != SelectionMode.single {
+                sel.toggle(root.current-row);
+                return accept;
+            }
+            if (event.text == "a" || event.text == "A") && (event.modifiers.control || event.modifiers.meta) && root.selection-mode != SelectionMode.single {
+                sel.select-all();
+                return accept;
+            }
+            return reject;
+        }
+    }
+}
+
+// A table whose rows are yours: `TableView { columns: ["Name", "Born"];
+// for p in people : TableRow { Text { text: p.name; } Text { ... } } }`.
+// Each child of a TableRow is a cell, in its column; columns share the
+// width unless `column-widths` gives theirs. Rows are `row-height` tall
+// (0: as tall as the first's tallest cell), and only those in view have
+// instances, handed on as it scrolls (as in a ListView). Clicking a header asks the app to
+// sort by it.
+export component TableView inherits Rectangle {
+    var in <[string]> columns;
+    var in <[length]> column-widths;
+    var in <length> row-height: 32px;
+    var in-out <length> viewport-y <=> body.viewport-y;
+    var out <length> visible-height: body.visible-height;
+    var out <int> row-count: list.row-count;
+    var out <int> sort-column: -1;
+    var out <bool> sort-ascending: true;
+    // Called when a header is clicked: sort the rows by that column.
+    callback sort-requested(int, bool);
+
+    public function column-width(c: int) -> length {
+        return root.column-widths.length == root.columns.length ? root.column-widths[c] : (root.width - 2px) / max(1, root.columns.length);
+    }
+    public function column-x(c: int) -> length {
+        return c <= 0 ? 0px : column-x(c - 1) + column-width(c - 1);
+    }
+    function sort-by(c: int) {
+        root.sort-ascending = c == root.sort-column ? !root.sort-ascending : true;
+        root.sort-column = c;
+        root.sort-requested(c, root.sort-ascending);
+    }
+
+    min-width: 100px;
+    min-height: 80px;
+    preferred-width: 400px;
+    preferred-height: 240px;
+    border-radius: Style.control-radius;
+    border-width: 1px;
+    border-color: Palette.border;
+    background: Palette.alternate-background;
+    clip: true;
+
+    // Header.
+    for title[c] in root.columns : Rectangle {
+        x: 1px + root.column-x(c) + body.viewport-x;
+        y: 1px;
+        width: root.column-width(c);
+        height: 32px;
+        background: head-touch.pressed ? Palette.control-pressed : head-touch.has-hover ? Palette.control-hover : Palette.control-background;
+        Text {
+            x: 10px;
+            width: parent.width - 30px;
+            text: title;
+            overflow: elide;
+            font-size: 13px;
+            font-weight: 700;
+            vertical-alignment: center;
+            color: Palette.secondary-foreground;
+        }
+        Path {
+            visible: c == root.sort-column;
+            x: parent.width - 20px;
+            y: (parent.height - 5px) / 2;
+            width: 9px;
+            height: 5px;
+            commands: root.sort-ascending ? "M 0 5 L 4.5 0 L 9 5" : "M 0 0 L 4.5 5 L 9 0";
+            stroke: Palette.secondary-foreground;
+            stroke-width: 1.2px;
+        }
+        Rectangle {
+            x: parent.width - 1px;
+            width: 1px;
+            background: Palette.border;
+        }
+        head-touch := TouchArea {
+            clicked => { root.sort-by(c); }
+        }
+    }
+    Rectangle {
+        y: 33px;
+        height: 1px;
+        background: Palette.border;
+    }
+
+    // Rows.
+    body := ScrollView {
+        x: 0px;
+        y: 34px;
+        width: parent.width;
+        height: parent.height - 34px;
+        border-width: 0px;
+        background: #00000000;
+        list := ListLayout {
+            viewport-y: body.viewport-y;
+            visible-height: body.visible-height;
+            row-height: root.row-height;
+            column-widths: root.column-widths;
+            column-count: root.columns.length;
+            @children
+        }
+    }
+}

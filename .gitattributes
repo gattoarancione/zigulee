@@ -1,0 +1,10 @@
+# Text files keep LF line endings everywhere (Windows checkouts too): the
+# formatter, the docs check and the golden tests compare exact bytes.
+* text=auto eol=lf
+
+*.png binary
+*.ttf binary
+*.ttc binary
+*.zbf binary
+*.spv binary
+*.wasm binary

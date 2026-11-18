@@ -1,0 +1,39 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+import { Palette } from "palette.zge";
+
+// A busy indicator: eight dots around a circle, the brightest one going
+// round while `running`.
+export component Spinner inherits Empty {
+    var in <bool> running: true;
+
+    accessible-role: progress-indicator;
+    var <float> phase;
+    var <length> size: min(root.width, root.height);
+    var <length> dot: max(2px, root.size / 7);
+
+    preferred-width: 24px;
+    preferred-height: 24px;
+    min-width: 12px;
+    min-height: 12px;
+
+    Timer {
+        interval: 50ms;
+        running: root.running;
+        triggered => { root.phase = mod(root.phase + 0.0625, 1); }
+    }
+    // Unit circle positions of the eight dots, clockwise from the top.
+    var <[float]> xs: [0, 0.7071, 1, 0.7071, 0, -0.7071, -1, -0.7071];
+    var <[float]> ys: [-1, -0.7071, 0, 0.7071, 1, 0.7071, 0, -0.7071];
+    for i in 8 : Rectangle {
+        x: root.width / 2 + (root.size - root.dot) / 2 * root.xs[i] - root.dot / 2;
+        y: root.height / 2 + (root.size - root.dot) / 2 * root.ys[i] - root.dot / 2;
+        width: root.dot;
+        height: root.dot;
+        border-radius: root.dot / 2;
+        background: Palette.accent-background;
+        // The dot at the phase is opaque; the ones behind it fade.
+        opacity: root.running ? 1 - mod(root.phase * 8 - i + 8, 8) / 9 : 0.3;
+    }
+}

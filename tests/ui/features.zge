@@ -1,0 +1,140 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// Exercised by tests/ui_test.zig.
+
+component Button inherits Rectangle {
+    var in <string> text;
+    var out <bool> is-pressed: touch.pressed;
+    callback clicked();
+
+    width: 120px;
+    height: 32px;
+    border-radius: 6px;
+    background: touch.pressed ? #222222 : #444444;
+    animate background { duration: 100ms; easing: ease-out; }
+
+    label := Text {
+        text: root.text;
+        color: white;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+export component App inherits Window {
+    width: 300px;
+    height: 200px;
+    title: "Features";
+    background: #ffffff;
+
+    var in-out <int> count: 0;
+    var out <string> summary: "Clicked \{count} time" + (count == 1 ? "" : "s");
+    var in <length> pad: 8px;
+    var out <float> ratio: count / 4;
+    var out <string> mirror;
+    mirror <=> echo.text;
+
+    callback add(int, int) -> int;
+    add(a, b) => { return a + b; }
+
+    callback reset();
+    reset => {
+        count = 0;
+        status.text = "reset";
+    }
+
+    layout := VerticalLayout {
+        padding: pad;
+        spacing: 4px;
+
+        button := Button {
+            text: "Hello";
+            // On a component's instance: stored on the Rectangle at its root.
+            drop-shadow-offset-y: 2px;
+            drop-shadow-blur: count * 2px;
+            drop-shadow-color: #00000060;
+            scale-y: count >= 100 ? 0.5 : 1;
+            clicked => {
+                count += 1;
+                if count > 2 {
+                    status.text = "many";
+                } else {
+                    status.text = "few";
+                }
+            }
+        }
+        status := Text { text: "none"; }
+        echo := Text { text: summary; }
+        bar := Rectangle {
+            height: 20px;
+            background: count > 0 ? #00ff00 : #ff0000;
+        }
+    }
+
+    overlay := Rectangle {
+        x: 10px;
+        y: 10px;
+        width: 50%;
+        height: 30px;
+        visible: count >= 5;
+        background: #0000ff80;
+    }
+
+    // Turned a little more at each click, and stretched from its left.
+    tilted := Rectangle {
+        x: 200px;
+        y: 150px;
+        width: 60px;
+        height: 16px;
+        border-radius: 4px;
+        background: #ff8800;
+        rotation: count * 20;
+        animate rotation { duration: 100ms; }
+        scale-x: 1.25;
+        transform-origin-x: 0px;
+        drop-shadow-offset-x: 3px;
+        drop-shadow-offset-y: 4px;
+        drop-shadow-blur: 6px;
+        drop-shadow-color: count > 1 ? #ff000080 : #00000080;
+        Text { text: "Tilt"; color: white; }
+    }
+
+    // Gradients: one following the count (from its angle too), one fixed.
+    shade := Rectangle {
+        x: 100px;
+        y: 150px;
+        width: 40px;
+        height: 40px;
+        border-radius: 8px;
+        background: @linear-gradient(count * 45deg, count > 0 ? #00ff00 : #ff0000, #0000ff 70%, white 100%);
+        animate background { duration: 100ms; }
+    }
+    glow := Rectangle {
+        x: 145px;
+        y: 150px;
+        width: 40px;
+        height: 40px;
+        background: @radial-gradient(circle, #ffff00, #ff880080, transparent);
+    }
+
+    // Turned in depth at each click, seen from close by.
+    stage := Rectangle {
+        x: 10px;
+        y: 150px;
+        width: 80px;
+        height: 40px;
+        perspective: 300px;
+        flipped := Rectangle {
+            background: #8800ff;
+            border-radius: 6px;
+            rotation-y: count * 35;
+            rotation-x: count >= 2 ? 15 : 0;
+            animate rotation-y { duration: 100ms; }
+            Text { text: "Flip"; color: white; }
+        }
+    }
+}

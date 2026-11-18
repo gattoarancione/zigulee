@@ -1,0 +1,44 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// A microphone recording played back, a camera's picture saved.
+export component CaptureApp inherits Window {
+    width: 100px;
+    height: 100px;
+    var in <string> folder;
+    var out <bool> available: mic.available && cam.available;
+    var out <float> level: mic.level;
+    var out <duration> length: mic.duration;
+    var out <bool> has-picture: pic.source.width > 0;
+    var in-out <int> taken;
+
+    mic := Microphone {}
+    player := Audio {
+        source: mic.recorded;
+    }
+    cam := Camera {
+        active: true;
+        picture-taken => {
+            root.taken += 1;
+            cam.save-picture("\{root.folder}/picture.png");
+        }
+    }
+    pic := Image {
+        source: cam.picture;
+    }
+
+    public function listen(on: bool) {
+        mic.active = on;
+    }
+    public function record() {
+        mic.record();
+    }
+    public function stop-and-play() {
+        mic.stop();
+        mic.save-recording("\{root.folder}/sound.wav");
+        player.play();
+    }
+    public function snap() {
+        cam.take-picture();
+    }
+}

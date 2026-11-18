@@ -1,0 +1,125 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+import { Palette } from "palette.zge";
+import { Style } from "style.zge";
+import { Button } from "button.zge";
+
+// A modal dialog: `open()` shows it over the whole window (dimmed), and the
+// rest of the window takes no input until it closes. Its content is the
+// elements put in it, under `heading`; `buttons` are its buttons, right to
+// left from the last. Return presses the default button (`accepted`),
+// Escape the cancel one (`rejected`); each button calls `clicked(index)`
+// and closes the dialog. Tab moves the focus among its controls only.
+export component Dialog inherits PopupWindow {
+    var in <string> heading;
+    var in <[string]> buttons: ["OK"];
+    // The button Return presses (drawn as the primary one), and the one
+    // Escape does (-1: none, Escape only closes).
+    var in <int> default-button: root.buttons.length - 1;
+    var in <int> cancel-button: -1;
+    // The panel's width (its height follows the content).
+    var in <length> panel-width: 400px;
+    callback clicked(int);
+    // The default button, or the cancel one (or Escape), was chosen.
+    callback accepted();
+    callback rejected();
+
+    public function open() {
+        root.answered = false;
+        root.show();
+        keys.focus();
+    }
+    // Closes it as if the button `i` was chosen.
+    public function choose(i: int) {
+        root.answered = true;
+        root.close();
+        root.clicked(i);
+        if i == root.default-button {
+            root.accepted();
+        } else if i == root.cancel-button {
+            root.rejected();
+        }
+    }
+
+    var <bool> answered;
+    // Closed by the window (Escape): as the cancel button.
+    changed is-open => {
+        if !root.is-open && !root.answered {
+            root.answered = true;
+            if root.cancel-button >= 0 {
+                root.clicked(root.cancel-button);
+            }
+            root.rejected();
+        }
+    }
+
+    close-policy: no-auto-close;
+    fill-window: true;
+    accessible-role: group;
+    accessible-label: root.heading;
+
+    // The dimmed window.
+    Rectangle {
+        background: Palette.dark ? #00000099 : #00000059;
+    }
+    panel := Rectangle {
+        width: min(root.panel-width, parent.width - 32px);
+        height: column.preferred-height;
+        x: (parent.width - self.width) / 2;
+        y: max(16px, (parent.height - self.height) / 2);
+        border-radius: Style.popup-radius + 2px;
+        border-width: 1px;
+        border-color: Palette.border;
+        background: Palette.alternate-background;
+
+        keys := FocusScope {
+            key-pressed(event) => {
+                if event.text == Key.Return && root.default-button >= 0 {
+                    root.choose(root.default-button);
+                    return accept;
+                }
+                return reject;
+            }
+        }
+        column := VerticalLayout {
+            padding: 20px;
+            spacing: 14px;
+            Text {
+                visible: root.heading != "";
+                text: root.heading;
+                font-size: Style.font-size + 4px;
+                font-weight: 700;
+                wrap: word-wrap;
+                color: Palette.foreground;
+            }
+            // The content (in a layout of its own: children go at the end
+            // of where `@children` is).
+            VerticalLayout {
+                spacing: 10px;
+                @children
+            }
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: end;
+                for label[i] in root.buttons : Button {
+                    min-width: 80px;
+                    text: label;
+                    primary: i == root.default-button;
+                    clicked => { root.choose(i); }
+                }
+            }
+        }
+    }
+}
+
+// A message with buttons (OK by default): a Dialog whose content is `text`.
+export component MessageDialog inherits Dialog {
+    var in <string> text;
+    Text {
+        text: root.text;
+        wrap: word-wrap;
+        font-size: Style.font-size;
+        color: Palette.foreground;
+    }
+}

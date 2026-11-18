@@ -1,0 +1,65 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// Charts: a line with an area and dots over grid lines, bars below 0 in
+// colors of their own, a ring; the hovered value and clicks shown.
+export component Charts inherits Window {
+    width: 320px;
+    height: 240px;
+    background: #ffffff;
+    var in-out <int> picked: -1;
+    var in-out <float> extra: 4;
+    line := LineChart {
+        x: 10px;
+        y: 10px;
+        width: 140px;
+        height: 100px;
+        values: [3, 7, root.extra, 9, 6];
+        fill: #2563eb40;
+        point-size: line.hovered-index >= 0 ? 8px : 5px;
+        grid-lines: 3;
+        clicked(i) => { root.picked = i; }
+    }
+    BarChart {
+        x: 170px;
+        y: 10px;
+        width: 140px;
+        height: 100px;
+        values: [4, -2, 6, root.extra];
+        colors: [#16a34a, #dc2626];
+        border-radius: 4px;
+        grid-lines: 2;
+        clicked(i) => { root.picked = 10 + i; }
+    }
+    pie := PieChart {
+        x: 10px;
+        y: 120px;
+        width: 140px;
+        height: 110px;
+        values: [root.extra, 2, 1];
+        hole: pie.hovered-index >= 0 ? 0.3 : 0.5;
+        clicked(i) => { root.picked = 20 + i; }
+    }
+    // One value: the whole circle.
+    PieChart {
+        x: 170px;
+        y: 120px;
+        width: 60px;
+        height: 60px;
+        values: [1];
+    }
+    Rectangle {
+        x: 240px;
+        y: 140px;
+        width: root.picked >= 0 ? 10px + root.picked * 2px : 4px;
+        height: 20px;
+        background: #f59e0b;
+    }
+    TouchArea {
+        x: 240px;
+        y: 200px;
+        width: 70px;
+        height: 30px;
+        clicked => { root.extra += 3; }
+    }
+}

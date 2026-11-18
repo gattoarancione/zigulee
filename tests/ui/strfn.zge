@@ -1,0 +1,43 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// A string-returning function called from several bindings (and a for's
+// rows, and twice in one expression): each keeps its own result. So do
+// functions returning a struct of strings, and lists.
+struct Person { name: string, age: int }
+
+export component StrFn inherits Window {
+    width: 200px;
+    height: 200px;
+    var in-out <int> n: 1;
+    callback named(int) -> string;
+    named(k) => { return "#" + k; }
+    function label(k: int) -> string { return "item " + k + " of " + root.n; }
+    var out <string> first: a.text;
+    var out <string> second: b.text;
+    var out <string> third: c.text;
+    var out <string> both: d.text;
+    var out <string> rows: list.text;
+    var out <string> called: e.text;
+    var out <string> called-too: f.text;
+    function person(k: int) -> Person { return { name: "p" + k + "/" + root.n, age: k }; }
+    function names(k: int) -> [string] { return ["a" + k, "b" + k + "/" + root.n]; }
+    function people(k: int) -> [Person] { return [{ name: "x" + k, age: 1 }, root.person(k)]; }
+    var out <Person> p1: root.person(1);
+    var out <Person> p2: root.person(2);
+    var out <Person> p3: root.person(3);
+    var out <[string]> l1: root.names(1);
+    var out <[string]> l2: root.names(2);
+    var out <[Person]> q1: root.people(1);
+    var out <[Person]> q2: root.people(2);
+    VerticalLayout {
+        a := Text { text: root.label(1); }
+        b := Text { text: root.label(2); }
+        c := Text { text: root.label(3); }
+        d := Text { text: root.label(4) + " / " + root.label(5); }
+        e := Text { text: root.named(6); }
+        f := Text { text: root.named(7); }
+        for i in 3 : Text { text: root.label(10 + i); }
+        list := Text { text: "rows"; }
+    }
+}

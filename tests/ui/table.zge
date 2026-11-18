@@ -1,0 +1,34 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+import { StandardTableView, Palette } from "std-widgets.zge";
+
+export component Table inherits Window {
+    width: 360px;
+    height: 200px;
+    background: Palette.background;
+    var in-out <[[string]]> people: [["Ada", "Lovelace", "1815"], ["Grace", "Hopper", "1906"], ["Alan", "Turing", "1912"], ["Katherine", "Johnson", "1918"], ["Edsger", "Dijkstra", "1930"], ["Barbara", "Liskov", "1939"]];
+    var in-out <int> row;
+    var in-out <int> sorted-by: -1;
+    var in-out <bool> sorted-up;
+    var out <string> picked-name: people[row][0] + " " + people[row][1];
+    // A nested non-constant array: rows built from properties.
+    var in-out <string> extra: "Hedy";
+    var out <[[string]]> computed: [[extra, "Lamarr"], ["Ada", "Lovelace"]];
+    var out <string> computed-first: computed[0][0];
+
+    table := StandardTableView {
+        x: 10px;
+        y: 10px;
+        width: 340px;
+        height: 180px;
+        columns: ["First", "Last", "Born"];
+        column-widths: [110px, 140px, 80px];
+        rows: root.people;
+        current-row <=> root.row;
+        sort-requested(c, up) => {
+            sorted-by = c;
+            sorted-up = up;
+        }
+    }
+}

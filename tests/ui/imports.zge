@@ -1,0 +1,15 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// Imports and globals: exercised by tests/ui_test.zig.
+import { LibButton } from "lib/button.zge";
+import { Theme } from "lib/theme.zge";
+
+export component Imports inherits Window {
+    width: 100px;
+    height: 50px;
+    var in-out <bool> dark <=> Theme.dark;
+    var out <int> clicks: Theme.clicks;
+
+    button := LibButton { label: "ok"; }
+}

@@ -1,0 +1,15 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// An SVG image with a clip path, a mask, uses of a definition, a blur and
+// text, drawn twice its size.
+export component SvgFeatures inherits Window {
+    width: 256px;
+    height: 128px;
+    background: #ffffff;
+    Image {
+        width: 256px;
+        height: 128px;
+        source: @image-url("features.svg");
+    }
+}

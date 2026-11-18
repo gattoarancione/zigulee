@@ -1,0 +1,26 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// A menu with submenus, two deep.
+import { Menu } from "std-widgets.zge";
+
+export component Submenus inherits Window {
+    width: 600px;
+    height: 300px;
+    background: #ffffff;
+    var out <int> chosen: -1;
+    menu := Menu {
+        items: [
+            { text: "Open" },
+            { text: "Export" },
+            { text: "PNG", level: 1 },
+            { text: "Vector", level: 1 },
+            { text: "SVG", level: 2 },
+            { text: "PDF", level: 2 },
+            { text: "JPEG", level: 1, disabled: true },
+            { separator: true },
+            { text: "Quit" },
+        ];
+        activated(i) => { root.chosen = i; }
+    }
+}

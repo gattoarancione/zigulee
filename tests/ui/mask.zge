@@ -1,0 +1,57 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// Masks: a card clips its children to its rounded corners; an image shows
+// an element and its children where it is opaque (QML's OpacityMask), an
+// SVG drawing where its shapes are; input follows the shapes, a clip
+// path's too.
+
+export component Mask inherits Window {
+    width: 400px;
+    height: 100px;
+    background: #ffffff;
+    var in-out <length> radius: 20px;
+    var in-out <int> card-clicks;
+    var in-out <int> half-clicks;
+    var in-out <int> slice-clicks;
+    var in-out <bool> invert;
+
+    card := Rectangle {
+        x: 10px;
+        y: 10px;
+        width: 80px;
+        height: 80px;
+        border-radius: root.radius;
+        clip: true;
+        Rectangle { width: 80px; height: 80px; background: #dc2626; }
+        TouchArea { clicked => { root.card-clicks += 1; } }
+    }
+    half := Rectangle {
+        x: 110px;
+        y: 10px;
+        width: 80px;
+        height: 80px;
+        background: #16a34a;
+        // Opaque on the left, clear on the right.
+        mask-image: @image-url("half.png");
+        mask-inverted: root.invert;
+        TouchArea { clicked => { root.half-clicks += 1; } }
+    }
+    badge := Rectangle {
+        x: 210px;
+        y: 10px;
+        width: 80px;
+        height: 80px;
+        background: #2563eb;
+        mask-image: @image-url("badge.svg");
+    }
+    slice := Rectangle {
+        x: 310px;
+        y: 10px;
+        width: 80px;
+        height: 80px;
+        background: #16a34a;
+        clip-path: "M 0 0 L 80 0 L 0 80 Z";
+        TouchArea { clicked => { root.slice-clicks += 1; } }
+    }
+}

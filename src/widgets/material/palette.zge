@@ -1,0 +1,52 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// Colors of the material style (Material 3 baseline). Set `Palette.dark`
+// to switch to dark mode.
+
+export global Palette {
+    var in-out <bool> dark;
+
+    var out <color> background: dark ? #141218 : #fef7ff;
+    var out <color> foreground: dark ? #e6e0e9 : #1d1b20;
+    var out <color> alternate-background: dark ? #211f26 : #f3edf7;
+    var out <color> secondary-foreground: dark ? #cac4d0 : #49454f;
+    var out <color> disabled-foreground: dark ? #6c6870 : #a19ea5;
+
+    var out <color> control-background: dark ? #2b2930 : #ece6f0;
+    var out <color> control-hover: dark ? #36343b : #e2dce6;
+    var out <color> control-pressed: dark ? #403e46 : #d8d2dc;
+    var out <color> control-disabled: dark ? #26242a : #ede8f0;
+    var out <color> border: dark ? #49454f : #cac4d0;
+    // Outlines of unchecked toggles and the empty part of tracks.
+    var out <color> strong-border: dark ? #938f99 : #79747e;
+    var out <color> track: dark ? #4a4458 : #e8def8;
+
+    var out <color> accent-background: dark ? #d0bcff : #6750a4;
+    var out <color> accent-hover: dark ? #dccbff : #7965b2;
+    var out <color> accent-pressed: dark ? #e5d8ff : #8b7abf;
+    var out <color> accent-foreground: dark ? #381e72 : #ffffff;
+
+    var out <color> focus-ring: dark ? #d0bcff : #6750a4;
+
+    // Text fields.
+    var out <color> input-background: dark ? #141218 : #fef7ff;
+    var out <color> input-focused-background: dark ? #141218 : #fef7ff;
+    var out <color> selection-background: dark ? #d0bcff55 : #6750a440;
+    var out <color> placeholder-foreground: dark ? #938f99 : #79747e;
+    var out <color> input-focus-border: dark ? #d0bcff : #6750a4;
+    var out <color> slider-thumb: dark ? #d0bcff : #6750a4;
+
+    // Switches: the track when off, the knob off and on.
+    var out <color> switch-track: control-background;
+    var out <color> switch-track-hover: control-hover;
+    var out <color> switch-knob: strong-border;
+    var out <color> switch-knob-checked: accent-foreground;
+    // Shadows (see Style's): under controls, under knobs.
+    var out <color> control-shadow: #00000000;
+    var out <color> knob-shadow: #00000000;
+
+    // Scroll bars and tabs.
+    var out <color> scrollbar: dark ? #938f9999 : #79747e99;
+    var out <color> scrollbar-hover: dark ? #cac4d0cc : #49454fcc;
+}

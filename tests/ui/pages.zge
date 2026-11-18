@@ -1,0 +1,66 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// Pages: a stack layout, a swipe view with its indicator, a vertical one,
+// a stack view.
+import { Button, PageIndicator, Palette } from "std-widgets.zge";
+
+component Detail inherits Rectangle {
+    background: #dbeafe;
+    Text { text: "Detail"; }
+}
+
+component Home inherits Rectangle {
+    background: #fef3c7;
+    Text { text: "Home"; }
+}
+
+export component Pages inherits Window {
+    width: 240px;
+    height: 380px;
+    background: #ffffff;
+    var in-out <int> tab;
+    var in-out <int> page;
+    var out <int> taps;
+
+    VerticalLayout {
+        spacing: 4px;
+        stack := StackLayout {
+            height: 30px;
+            current-index: root.tab;
+            Rectangle { background: #fecaca; Text { text: "One"; } }
+            Rectangle { background: #bbf7d0; Text { text: "Two"; } }
+        }
+        swipe := SwipeView {
+            height: 80px;
+            current-index <=> root.page;
+            Rectangle { background: #e9d5ff; Text { text: "A"; } }
+            Rectangle { background: #fed7aa; Text { text: "B"; } }
+            Rectangle { background: #a5f3fc; Text { text: "C"; } }
+        }
+        dots := PageIndicator {
+            count: swipe.count;
+            current-index <=> root.page;
+        }
+        vswipe := SwipeView {
+            height: 60px;
+            orientation: Orientation.vertical;
+            Rectangle {
+                background: #fde68a;
+                Text { text: "Up"; }
+                TouchArea { clicked => { root.taps += 1; } }
+            }
+            Rectangle { background: #bfdbfe; Text { text: "Down"; } }
+        }
+        nav := StackView {
+            height: 100px;
+            initial-page: Home;
+        }
+        HorizontalLayout {
+            spacing: 4px;
+            Button { text: "Open"; clicked => { nav.push(Detail); } }
+            Button { text: "Back"; clicked => { nav.pop(); } }
+            Button { text: "Tab"; clicked => { root.tab = 1 - root.tab; } }
+        }
+    }
+}

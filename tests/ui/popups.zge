@@ -1,0 +1,40 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+import { ComboBox, StandardListView, DatePicker, Palette } from "std-widgets.zge";
+
+export component Popups inherits Window {
+    width: 320px;
+    height: 520px;
+    background: Palette.background;
+    var in-out <int> fruit: 1;
+    var out <string> fruit-name: combo.current-value;
+    var in-out <int> picks;
+    var in-out <int> item: -1;
+    var in-out <int> year: 2026;
+    var in-out <int> month: 10;
+    var in-out <int> day: 14;
+    var out <int> weekday: picker.weekday(year, month, day);
+
+    VerticalLayout {
+        padding: 10px;
+        spacing: 8px;
+        alignment: start;
+        combo := ComboBox {
+            model: ["Apple", "Banana", "Cherry", "Date"];
+            current-index <=> root.fruit;
+            selected(v) => { picks += 1; }
+        }
+        list := StandardListView {
+            height: 120px;
+            model: ["One", "Two", "Three", "Four", "Five", "Six"];
+            current-item <=> root.item;
+        }
+        picker := DatePicker {
+            height: 300px;
+            year <=> root.year;
+            month <=> root.month;
+            day <=> root.day;
+        }
+    }
+}

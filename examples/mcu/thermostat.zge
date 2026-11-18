@@ -1,0 +1,76 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// A thermostat for a 320x240 display: the MCU demo whose memory and code
+// size `zig build mcu-size` measures (built with the minimal style).
+
+import { Button, Switch, Slider, ProgressIndicator, Palette } from "std-widgets.zge";
+
+export component Thermostat inherits Window {
+    width: 320px;
+    height: 240px;
+    background: Palette.background;
+
+    var in-out <float> target: 21;
+    var in <float> current: 19.5;
+    var in-out <bool> heating: true;
+    var in-out <bool> away;
+
+    VerticalLayout {
+        padding: 12px;
+        spacing: 8px;
+
+        HorizontalLayout {
+            Text {
+                text: "Living room";
+                font-size: 16px;
+                color: Palette.foreground;
+            }
+            Text {
+                text: away ? "Away" : "Home";
+                horizontal-alignment: right;
+                color: Palette.secondary-foreground;
+            }
+        }
+
+        HorizontalLayout {
+            spacing: 12px;
+            Button {
+                width: 56px;
+                text: "-";
+                clicked => { target = max(10, target - 0.5); }
+            }
+            Text {
+                horizontal-stretch: 1;
+                text: "\{round(target * 10) / 10}";
+                font-size: 40px;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                color: Palette.foreground;
+            }
+            Button {
+                width: 56px;
+                text: "+";
+                clicked => { target = min(30, target + 0.5); }
+            }
+        }
+
+        Text {
+            text: "Now \{current}, " + (heating && current < target ? "heating" : "idle");
+            horizontal-alignment: center;
+            color: Palette.secondary-foreground;
+        }
+        ProgressIndicator { progress: (current - 10) / 20; }
+        Slider {
+            minimum: 10;
+            maximum: 30;
+            step: 0.5;
+            value <=> root.target;
+        }
+        HorizontalLayout {
+            spacing: 12px;
+            Switch { text: "Heating"; checked <=> root.heating; }
+            Switch { text: "Away"; checked <=> root.away; }
+        }
+    }
+}

@@ -1,0 +1,785 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// Patrisio's Snowy Adventure: a side-scrolling platformer, all in .zge.
+//
+// Patrisio, a fluffy emperor penguin chick, waddles home to his igloo:
+// jump over gaps and onto ice ledges, bump "?" blocks for fish, collect the
+// fish on the way, stomp the grumpy seals. Arrows (or A and D) to waddle,
+// Space (or Up, or W) to jump: hold it to jump higher.
+//
+// The game runs in a Timer (60 steps a second): its handler moves Patrisio,
+// finds what he lands on or bumps into (recursive functions over the
+// level's arrays: handlers have no loops), and everything drawn follows
+// from the properties it sets. `zig build run-patrisio`.
+//
+// Sounds and the tune (examples/patrisio/*.wav) are made by
+// tools/patrisio_sounds.zig: `zig build patrisio-sounds`.
+
+import { Sound, Music } from "std-widgets.zge";
+
+struct Ground { x: float, w: float }
+struct Ledge { x: float, y: float, w: float }
+struct Block { x: float, y: float, bit: int }
+struct Pillar { x: float, h: float }
+struct Fish { x: float, y: float, bit: int }
+struct Seal { x: float, range: float, speed: float, bit: int }
+struct Spot { x: float, y: float, size: float }
+
+enum Phase { title, playing, ouch, game-over, home }
+
+// Colors.
+global Snow {
+    var out <color> sky: #a9d6f5;
+    var out <color> sky-far: #cfe8fa;
+    var out <color> mountain: #8fb3d6;
+    var out <color> mountain-snow: #f4f8fc;
+    var out <color> hill: #b9d4ea;
+    var out <color> ice: #6fa8d6;
+    var out <color> ice-dark: #3f79ad;
+    var out <color> snow: #fbfdff;
+    var out <color> shadow: #d7e6f3;
+    var out <color> ink: #1d2433;
+}
+
+// Patrisio: everything scaled to his width (48 at 1x), facing right or
+// left; feet waddle with `step`, flippers rise while he is in the air,
+// eyes blink.
+component Patrisio inherits Empty {
+    var in <float> facing: 1;
+    var in <float> step;
+    var in <bool> airborne;
+    var in <bool> blinking;
+    var in <bool> dizzy;
+    var <float> u: root.width / 48px;
+    var <[Spot]> tufts: [
+        { x: 2, y: 18, size: 14 }, { x: 32, y: 18, size: 14 }, { x: 0, y: 28, size: 15 },
+        { x: 33, y: 28, size: 15 }, { x: 6, y: 38, size: 13 }, { x: 29, y: 38, size: 13 },
+        { x: 17, y: 40, size: 14 },
+    ];
+    var <[Spot]> eyes: [{ x: 19, y: 12, size: 5 }, { x: 28, y: 12, size: 5 }];
+
+    // A shape's x for the way he faces (x and w in 48ths of his width).
+    function fx(x: float, w: float) -> length {
+        return (facing > 0 ? x : 48 - x - w) * u * 1px;
+    }
+    function px(v: float) -> length { return v * u * 1px; }
+
+    // Feet, behind the body.
+    Rectangle {
+        x: fx(11, 11); y: px(45 + (airborne ? -2 : max(0, sin-ish(step)) * 3));
+        width: px(11); height: px(6); border-radius: px(3); background: #5b5f6a;
+    }
+    Rectangle {
+        x: fx(26, 11); y: px(45 + (airborne ? -2 : max(0, -sin-ish(step)) * 3));
+        width: px(11); height: px(6); border-radius: px(3); background: #5b5f6a;
+    }
+    // Fluff: soft tufts around the body.
+    for t in tufts : Rectangle {
+        x: fx(t.x, t.size); y: px(t.y + (airborne ? -0.5 : 0));
+        width: px(t.size); height: px(t.size); border-radius: px(t.size / 2);
+        background: #c5cad2;
+    }
+    // Flippers.
+    Rectangle {
+        x: fx(airborne ? -3 : 1, 9); y: px(airborne ? 16 : 25);
+        width: px(9); height: px(airborne ? 12 : 17); border-radius: px(4.5); background: #8f96a1;
+    }
+    Rectangle {
+        x: fx(airborne ? 42 : 38, 9); y: px(airborne ? 16 : 25);
+        width: px(9); height: px(airborne ? 12 : 17); border-radius: px(4.5); background: #8f96a1;
+    }
+    // Body, and a lighter belly.
+    Rectangle {
+        x: fx(5, 38); y: px(15); width: px(38); height: px(33); border-radius: px(16);
+        background: #b4bac4;
+    }
+    Rectangle {
+        x: fx(12, 24); y: px(22); width: px(24); height: px(24); border-radius: px(12);
+        background: #dfe3e9;
+    }
+    // Head: a black cap, a white face.
+    Rectangle {
+        x: fx(7, 34); y: px(0); width: px(34); height: px(28); border-radius: px(14);
+        background: #262a33;
+    }
+    Rectangle {
+        x: fx(13, 26); y: px(7); width: px(26); height: px(19); border-radius: px(9.5);
+        background: #fbfbfd;
+    }
+    // Cheeks.
+    Rectangle {
+        x: fx(13, 6); y: px(18); width: px(6); height: px(4); border-radius: px(2);
+        background: #f6b7c3;
+    }
+    Rectangle {
+        x: fx(31, 6); y: px(18); width: px(6); height: px(4); border-radius: px(2);
+        background: #f6b7c3;
+    }
+    // Eyes (closed while blinking, crosses when dizzy).
+    for e in eyes : Rectangle {
+        x: fx(e.x, e.size); y: px(blinking ? e.y + 2 : e.y);
+        width: px(e.size); height: px(blinking ? 1.5 : 6); border-radius: px(2.5);
+        background: dizzy ? #ffffff00 : #1b1e26;
+        Rectangle {
+            x: parent.width * 0.5; y: px(1); width: px(1.6); height: px(1.6);
+            border-radius: px(0.8); background: white; visible: !blinking;
+        }
+        Text {
+            text: "x"; visible: dizzy; color: #1b1e26; font-size: px(9); font-weight: 700;
+            x: px(-1); y: px(-4);
+        }
+    }
+    // A small beak, below the eyes, toward where he looks.
+    Path {
+        x: fx(23, 6); y: px(19); width: px(6); height: px(4.5);
+        commands: "M 0 0 L 6 0 L 3 4.5 Z";
+        fill: #3a3f4b;
+    }
+
+    // A waddle: -1..1 over a step.
+    function sin-ish(s: float) -> float {
+        return 1 - 4 * abs(s - floor(s) - 0.5);
+    }
+}
+
+// A grumpy seal, waddling along; flattened once stomped.
+component GrumpySeal inherits Empty {
+    var in <float> facing: 1;
+    var in <float> wobble;
+    var in <bool> flat;
+    var <[Spot]> spots: [{ x: 10, y: 16, size: 5 }, { x: 20, y: 20, size: 4 }, { x: 16, y: 13, size: 3 }];
+    function fx(x: float, w: float) -> length {
+        return (facing > 0 ? x : 50 - x - w) * 1px;
+    }
+    Rectangle {
+        x: fx(2, 46); y: flat ? 24px : 10px + wobble * 1px; width: 46px; height: flat ? 8px : 22px;
+        border-radius: flat ? 4px : 11px; background: #7d8796;
+    }
+    Rectangle {
+        x: fx(30, 18); y: flat ? 22px : 2px + wobble * 1px; width: 18px; height: flat ? 8px : 18px;
+        border-radius: 9px; background: #7d8796; visible: !flat;
+    }
+    // Spots, a frowning eye, whiskers.
+    for s in spots : Rectangle {
+        x: fx(s.x, s.size); y: (s.y + wobble) * 1px; width: s.size * 1px; height: s.size * 1px;
+        border-radius: s.size * 0.5px; background: #5f6876; visible: !flat;
+    }
+    Rectangle {
+        x: fx(38, 5); y: 7px + wobble * 1px; width: 5px; height: 5px; border-radius: 2.5px;
+        background: #1b1e26; visible: !flat;
+    }
+    Path {
+        x: fx(35, 10); y: 4px + wobble * 1px; width: 10px; height: 3px; visible: !flat;
+        commands: facing > 0 ? "M 0 0 L 10 3" : "M 10 0 L 0 3";
+        stroke: #1b1e26; stroke-width: 1.5px;
+    }
+    Rectangle {
+        x: fx(45, 4); y: 12px + wobble * 1px; width: 4px; height: 3px; border-radius: 1.5px;
+        background: #2a2f3a; visible: !flat;
+    }
+    // Flippers.
+    Rectangle {
+        x: fx(4, 12); y: flat ? 26px : 27px; width: 12px; height: 5px; border-radius: 2.5px;
+        background: #66707e;
+    }
+    Rectangle {
+        x: fx(28, 12); y: flat ? 26px : 27px; width: 12px; height: 5px; border-radius: 2.5px;
+        background: #66707e;
+    }
+}
+
+// A fish to collect (or that pops out of a block).
+component FishIcon inherits Empty {
+    var in <color> color: #ff9f43;
+    Rectangle {
+        x: root.width * 0.15; y: root.height * 0.15; width: root.width * 0.62; height: root.height * 0.7;
+        border-radius: root.height * 0.35; background: color;
+    }
+    Path {
+        x: root.width * 0.7; y: root.height * 0.1; width: root.width * 0.3; height: root.height * 0.8;
+        commands: "M 0 5 L 6 0 L 6 10 Z"; fill: color;
+    }
+    Rectangle {
+        x: root.width * 0.27; y: root.height * 0.36; width: root.height * 0.18; height: root.height * 0.18;
+        border-radius: root.height * 0.09; background: #1b1e26;
+    }
+}
+
+export component PatrisioGame inherits Window {
+    title: "Patrisio's Snowy Adventure";
+    width: 800px;
+    height: 450px;
+    background: Snow.sky;
+
+    // ---- The level ----
+
+    var out <float> ground-y: 380;
+    var out <float> level-width: 7000;
+    var out <float> home-x: 6650;
+    var in <[Ground]> grounds: [
+        { x: 0, w: 1200 }, { x: 1300, w: 900 }, { x: 2320, w: 600 }, { x: 3050, w: 1400 },
+        { x: 4560, w: 500 }, { x: 5180, w: 1820 },
+    ];
+    var in <[Ledge]> ledges: [
+        { x: 520, y: 270, w: 160 }, { x: 1230, y: 300, w: 120 }, { x: 1650, y: 250, w: 200 },
+        { x: 1950, y: 170, w: 140 }, { x: 2400, y: 280, w: 180 }, { x: 2940, y: 290, w: 110 },
+        { x: 3400, y: 250, w: 240 }, { x: 3800, y: 180, w: 160 }, { x: 4430, y: 300, w: 140 },
+        { x: 4800, y: 240, w: 180 }, { x: 5450, y: 260, w: 200 }, { x: 5800, y: 190, w: 160 },
+    ];
+    var in <[Block]> blocks: [
+        { x: 380, y: 260, bit: 1 }, { x: 420, y: 260, bit: 2 }, { x: 900, y: 260, bit: 4 },
+        { x: 1730, y: 130, bit: 8 }, { x: 2650, y: 260, bit: 16 }, { x: 3500, y: 130, bit: 32 },
+        { x: 4100, y: 260, bit: 64 }, { x: 4140, y: 260, bit: 128 }, { x: 5300, y: 260, bit: 256 },
+        { x: 6200, y: 260, bit: 512 },
+    ];
+    var in <[Pillar]> pillars: [
+        { x: 1000, h: 70 }, { x: 2750, h: 90 }, { x: 3250, h: 70 }, { x: 4300, h: 85 },
+        { x: 5600, h: 90 }, { x: 6050, h: 80 },
+    ];
+    var in <[Fish]> fishes: [
+        { x: 300, y: 330, bit: 1 }, { x: 560, y: 230, bit: 2 }, { x: 600, y: 230, bit: 4 },
+        { x: 640, y: 230, bit: 8 }, { x: 1240, y: 250, bit: 16 }, { x: 1290, y: 215, bit: 32 },
+        { x: 1700, y: 210, bit: 64 }, { x: 1990, y: 130, bit: 128 }, { x: 2030, y: 130, bit: 256 },
+        { x: 2450, y: 240, bit: 512 }, { x: 2520, y: 240, bit: 1024 }, { x: 2975, y: 245, bit: 2048 },
+        { x: 3450, y: 210, bit: 4096 }, { x: 3550, y: 210, bit: 8192 }, { x: 3850, y: 140, bit: 16384 },
+        { x: 4480, y: 260, bit: 32768 }, { x: 4850, y: 200, bit: 65536 }, { x: 4900, y: 200, bit: 131072 },
+        { x: 5500, y: 220, bit: 262144 }, { x: 5550, y: 220, bit: 524288 }, { x: 5850, y: 150, bit: 1048576 },
+        { x: 6300, y: 330, bit: 2097152 }, { x: 6400, y: 330, bit: 4194304 }, { x: 6500, y: 330, bit: 8388608 },
+    ];
+    var in <[Seal]> seals: [
+        { x: 700, range: 220, speed: 1.2, bit: 1 }, { x: 1450, range: 300, speed: 1.4, bit: 2 },
+        { x: 2400, range: 250, speed: 1.6, bit: 4 }, { x: 3100, range: 110, speed: 1.2, bit: 8 },
+        { x: 3600, range: 500, speed: 1.8, bit: 16 }, { x: 4600, range: 300, speed: 1.6, bit: 32 },
+        { x: 5250, range: 280, speed: 1.8, bit: 64 }, { x: 6150, range: 350, speed: 2, bit: 128 },
+    ];
+    var out <float> checkpoint-x: 3100;
+    var out <int> fish-total: fishes.length + blocks.length;
+
+    // ---- The game's state ----
+
+    var out <Phase> phase: Phase.title;
+    var out <int> frame;
+    // Patrisio's box (34 x 44) in the world, his speed, where he faces.
+    var out <float> px: 80;
+    var out <float> py: 336;
+    var out <float> vx;
+    var out <float> vy;
+    var out <bool> on-ground: true;
+    var out <float> facing: 1;
+    var out <float> walk;
+    var out <float> camera;
+    var out <int> lives: 3;
+    var out <int> fish: 0;
+    var out <int> fish-taken;
+    var out <int> blocks-used;
+    var out <int> seals-down;
+    var out <float> respawn-x: 80;
+    var out <int> safe-until;
+    var out <int> ouch-until;
+    var out <int> popped-block: -1;
+    var out <int> popped-at;
+    // Input.
+    var in-out <bool> left;
+    var in-out <bool> right;
+    var in-out <bool> jump-held;
+    var in-out <int> jump-wanted;
+    var out <int> coyote;
+    // Scratch values of a step.
+    var <float> nx;
+    var <float> ny;
+    var <float> surface;
+    var <int> hit;
+
+    var out <float> pw: 34;
+    var out <float> ph: 44;
+
+    // ---- Small helpers ----
+
+    // Whether bit `bit` is set in `mask`.
+    function has(mask: int, bit: int) -> bool {
+        return mod(floor(mask / bit), 2) == 1;
+    }
+    // 0..1..0 over a period of 2.
+    function zigzag(p: float) -> float {
+        return 1 - abs(p - 2 * floor(p / 2) - 1);
+    }
+    function seal-x(i: int) -> float {
+        return seals[i].x + seals[i].range * zigzag(frame * seals[i].speed / seals[i].range);
+    }
+    function seal-facing(i: int) -> float {
+        return zigzag(frame * seals[i].speed / seals[i].range + 0.02) > zigzag(frame * seals[i].speed / seals[i].range) ? 1 : -1;
+    }
+    function overlaps(ax: float, aw: float, bx: float, bw: float) -> bool {
+        return ax < bx + bw && ax + aw > bx;
+    }
+
+    // ---- Collisions: recursive over the level's arrays ----
+
+    // The highest surface Patrisio's feet cross while falling from `from`
+    // to `to` (bottom edges), over [x, x + w]; 99999 if none.
+    function landing(x: float, w: float, from: float, to: float) -> float {
+        return min(min(land-ground(0, x, w, from, to), land-ledge(0, x, w, from, to)),
+                   min(land-block(0, x, w, from, to), land-pillar(0, x, w, from, to)));
+    }
+    function crossing(top: float, from: float, to: float) -> bool {
+        return from <= top + 0.01 && to >= top;
+    }
+    function land-ground(i: int, x: float, w: float, from: float, to: float) -> float {
+        if i >= grounds.length { return 99999; }
+        return min(overlaps(x, w, grounds[i].x, grounds[i].w) && crossing(ground-y, from, to) ? ground-y : 99999,
+                   land-ground(i + 1, x, w, from, to));
+    }
+    function land-ledge(i: int, x: float, w: float, from: float, to: float) -> float {
+        if i >= ledges.length { return 99999; }
+        return min(overlaps(x, w, ledges[i].x, ledges[i].w) && crossing(ledges[i].y, from, to) ? ledges[i].y : 99999,
+                   land-ledge(i + 1, x, w, from, to));
+    }
+    function land-block(i: int, x: float, w: float, from: float, to: float) -> float {
+        if i >= blocks.length { return 99999; }
+        return min(overlaps(x, w, blocks[i].x, 40) && crossing(blocks[i].y, from, to) ? blocks[i].y : 99999,
+                   land-block(i + 1, x, w, from, to));
+    }
+    function land-pillar(i: int, x: float, w: float, from: float, to: float) -> float {
+        if i >= pillars.length { return 99999; }
+        return min(overlaps(x, w, pillars[i].x, 60) && crossing(ground-y - pillars[i].h, from, to) ? ground-y - pillars[i].h : 99999,
+                   land-pillar(i + 1, x, w, from, to));
+    }
+    // The block whose bottom Patrisio's head crosses rising from `from` to
+    // `to` (top edges), or -1.
+    function bump(i: int, x: float, w: float, from: float, to: float) -> int {
+        if i >= blocks.length { return -1; }
+        if overlaps(x + 6, w - 12, blocks[i].x, 40) && from >= blocks[i].y + 40 - 0.01 && to <= blocks[i].y + 40 {
+            return i;
+        }
+        return bump(i + 1, x, w, from, to);
+    }
+    // `x` pushed out of the solid sides of pillars and blocks, moving by
+    // `dx`, for a box at [y, y + h].
+    function wall(i: int, x: float, dx: float, y: float) -> float {
+        if i >= pillars.length + blocks.length { return x; }
+        return wall(i + 1, push(x, dx, y,
+                                i < pillars.length ? pillars[i].x : blocks[i - pillars.length].x,
+                                i < pillars.length ? ground-y - pillars[i].h : blocks[i - pillars.length].y,
+                                i < pillars.length ? 60 : 40,
+                                i < pillars.length ? pillars[i].h : 40), dx, y);
+    }
+    function push(x: float, dx: float, y: float, bx: float, by: float, bw: float, bh: float) -> float {
+        if y + ph <= by + 0.5 || y >= by + bh - 0.5 || !overlaps(x, pw, bx, bw) { return x; }
+        return dx > 0 ? bx - pw : (dx < 0 ? bx + bw : x);
+    }
+    // A fish Patrisio touches, not yet taken, or -1.
+    function touch-fish(i: int) -> int {
+        if i >= fishes.length { return -1; }
+        if !has(fish-taken, fishes[i].bit) && overlaps(px, pw, fishes[i].x, 28) && overlaps(py, ph, fishes[i].y, 22) {
+            return i;
+        }
+        return touch-fish(i + 1);
+    }
+    // A seal Patrisio touches, still grumpy, or -1.
+    function touch-seal(i: int) -> int {
+        if i >= seals.length { return -1; }
+        if !has(seals-down, seals[i].bit) && overlaps(px + 3, pw - 6, seal-x(i) + 3, 44) && overlaps(py, ph, ground-y - 30, 30) {
+            return i;
+        }
+        return touch-seal(i + 1);
+    }
+
+    // ---- The game ----
+
+    public function start() {
+        phase = Phase.playing;
+        lives = 3;
+        fish = 0;
+        fish-taken = 0;
+        blocks-used = 0;
+        seals-down = 0;
+        respawn-x = 80;
+        respawn();
+    }
+    function respawn() {
+        px = respawn-x;
+        py = ground-y - ph;
+        vx = 0;
+        vy = 0;
+        on-ground = true;
+        facing = 1;
+        camera = max(0, px - 200);
+        safe-until = frame + 90;
+        phase = Phase.playing;
+    }
+    function ouch() {
+        ouch-sound.play();
+        phase = Phase.ouch;
+        lives -= 1;
+        vy = -9;
+        vx = 0;
+        ouch-until = frame + 100;
+    }
+
+    // One step of the game (1/60 s).
+    public function tick() {
+        frame += 1;
+        if phase == Phase.ouch {
+            // A hop, then down off the screen.
+            vy = min(vy + 0.5, 12);
+            py += vy;
+            if frame >= ouch-until {
+                if lives <= 0 {
+                    phase = Phase.game-over;
+                    lose-sound.play();
+                } else {
+                    respawn();
+                }
+            }
+            return;
+        }
+        if phase != Phase.playing { return; }
+
+        // Waddling: speed up toward where the arrows say, slow down without.
+        if right && !left { vx = min(vx + 0.6, 4.6); facing = 1; }
+        if left && !right { vx = max(vx - 0.6, -4.6); facing = -1; }
+        if left == right { vx = vx * (on-ground ? 0.78 : 0.94); }
+        if abs(vx) < 0.05 { vx = 0; }
+        walk = on-ground && abs(vx) > 0.3 ? walk + abs(vx) * 0.035 : 0;
+
+        // Jumping: a press shortly before landing counts, so does one just
+        // after leaving a ledge; holding the key keeps him going up.
+        coyote = on-ground ? 6 : max(0, coyote - 1);
+        if jump-wanted > 0 && coyote > 0 {
+            jump-sound.play();
+            vy = -10.6;
+            on-ground = false;
+            coyote = 0;
+            jump-wanted = 0;
+        }
+        jump-wanted = max(0, jump-wanted - 1);
+        vy = min(vy + (jump-held && vy < 0 ? 0.38 : 0.62), 12);
+
+        // Sideways, stopped by pillars and blocks, and by the screen's left
+        // edge and the level's ends.
+        nx = wall(0, px + vx, vx, py);
+        nx = max(nx, max(0, camera));
+        nx = min(nx, level-width - pw);
+        if nx != px + vx { vx = 0; }
+        px = nx;
+
+        // Up or down: land on what his feet cross, bump the blocks his head
+        // crosses.
+        ny = py + vy;
+        if vy >= 0 {
+            surface = landing(px + 2, pw - 4, py + ph, ny + ph);
+            if surface < 99999 {
+                ny = surface - ph;
+                vy = 0;
+                on-ground = true;
+            } else {
+                on-ground = false;
+            }
+        } else {
+            on-ground = false;
+            hit = bump(0, px, pw, py, ny);
+            if hit >= 0 {
+                ny = blocks[hit].y + 40;
+                vy = 1;
+                bonk-sound.play();
+                if !has(blocks-used, blocks[hit].bit) {
+                    fish-sound.play();
+                    blocks-used += blocks[hit].bit;
+                    fish += 1;
+                    popped-block = hit;
+                    popped-at = frame;
+                }
+            }
+        }
+        py = ny;
+
+        // Fish, seals, falling, home.
+        hit = touch-fish(0);
+        if hit >= 0 {
+            fish-sound.play();
+            fish-taken += fishes[hit].bit;
+            fish += 1;
+        }
+        hit = touch-seal(0);
+        if hit >= 0 {
+            if vy > 0 && py + ph - vy <= ground-y - 30 + 12 {
+                stomp-sound.play();
+                seals-down += seals[hit].bit;
+                vy = jump-held ? -9.5 : -6.5;
+            } else if frame >= safe-until {
+                ouch();
+            }
+        }
+        if px > checkpoint-x && respawn-x < checkpoint-x { respawn-x = checkpoint-x; }
+        if py > 470 { ouch(); }
+        if px + pw / 2 > home-x + 60 && on-ground {
+            phase = Phase.home;
+            vx = 0;
+            win-sound.play();
+        }
+
+        // The camera follows, a little ahead of where he looks.
+        camera += (max(0, min(level-width - 800, px + pw / 2 - 360 + facing * 40)) - camera) * 0.12;
+    }
+
+    // ---- Sound ----
+
+    // The tune plays while the game does, fading out when it ends.
+    Music {
+        source: @audio-url("patrisio/theme.wav");
+        volume: 0.45;
+        playing: phase == Phase.playing || phase == Phase.ouch;
+    }
+    jump-sound := Sound { source: @audio-url("patrisio/jump.wav"); }
+    fish-sound := Sound { source: @audio-url("patrisio/fish.wav"); }
+    bonk-sound := Sound { source: @audio-url("patrisio/bonk.wav"); volume: 0.6; }
+    stomp-sound := Sound { source: @audio-url("patrisio/stomp.wav"); }
+    ouch-sound := Sound { source: @audio-url("patrisio/ouch.wav"); }
+    lose-sound := Sound { source: @audio-url("patrisio/lose.wav"); }
+    win-sound := Sound { source: @audio-url("patrisio/win.wav"); }
+
+    Timer {
+        interval: 16ms;
+        running: true;
+        triggered => {
+            // Keys from the start (no click needed).
+            if !keys.has-focus { keys.focus(); }
+            root.tick();
+        }
+    }
+
+    keys := FocusScope {
+        key-pressed(event) => {
+            if event.text == Key.LeftArrow || event.text == "a" || event.text == "A" { left = true; return accept; }
+            if event.text == Key.RightArrow || event.text == "d" || event.text == "D" { right = true; return accept; }
+            if event.text == Key.Space || event.text == Key.UpArrow || event.text == "w" || event.text == "W" {
+                if phase == Phase.title || phase == Phase.game-over || phase == Phase.home {
+                    if !event.repeat { start(); }
+                    return accept;
+                }
+                if !event.repeat { jump-wanted = 8; }
+                jump-held = true;
+                return accept;
+            }
+            return reject;
+        }
+        key-released(event) => {
+            if event.text == Key.LeftArrow || event.text == "a" || event.text == "A" { left = false; return accept; }
+            if event.text == Key.RightArrow || event.text == "d" || event.text == "D" { right = false; return accept; }
+            if event.text == Key.Space || event.text == Key.UpArrow || event.text == "w" || event.text == "W" {
+                jump-held = false;
+                return accept;
+            }
+            return reject;
+        }
+    }
+
+    // ---- The scenery, far to near ----
+
+    Rectangle { y: 0px; width: 100%; height: 160px; background: Snow.sky-far; opacity: 0.6; }
+    // The sun.
+    Rectangle { x: 640px; y: 40px; width: 70px; height: 70px; border-radius: 35px; background: #fff3c4; }
+    // Mountains (a third of the camera's speed).
+    for m[i] in 14 : Empty {
+        x: (i * 560 - camera * 0.3 - 100) * 1px;
+        y: (150 + mod(i * 37, 60)) * 1px;
+        width: 520px;
+        height: 260px;
+        Path {
+            width: 100%; height: 100%;
+            commands: "M 0 26 L 13 0 L 26 26 Z";
+            fill: Snow.mountain;
+        }
+        Path {
+            x: parent.width * 0.38; width: parent.width * 0.24; height: parent.height * 0.24;
+            commands: "M 0 6 L 6 0 L 12 6 L 9 5 L 6 7 L 3 5 Z";
+            fill: Snow.mountain-snow;
+        }
+    }
+    // Clouds (slower still).
+    for c[i] in 16 : Empty {
+        x: (i * 470 + 60 - camera * 0.15 + mod(frame * (0.15 + 0.05 * mod(i, 3)), 470)) * 1px;
+        y: (30 + mod(i * 53, 90)) * 1px;
+        width: 120px; height: 40px;
+        Rectangle { x: 0px; y: 14px; width: 120px; height: 26px; border-radius: 13px; background: white; opacity: 0.9; }
+        Rectangle { x: 22px; y: 0px; width: 48px; height: 40px; border-radius: 24px; background: white; opacity: 0.9; }
+        Rectangle { x: 56px; y: 6px; width: 40px; height: 34px; border-radius: 20px; background: white; opacity: 0.9; }
+    }
+    // Snowy hills (half the camera's speed).
+    for h[i] in 22 : Rectangle {
+        x: (i * 380 - camera * 0.5 - 80) * 1px;
+        y: (300 + mod(i * 29, 40)) * 1px;
+        width: 360px; height: 260px; border-radius: 180px;
+        background: Snow.hill;
+    }
+
+    // ---- The world (moves with the camera) ----
+
+    world := Empty {
+        x: -camera * 1px;
+        width: level-width * 1px;
+        height: 100%;
+
+        // Ground, with a snow crust.
+        for g in grounds : Rectangle {
+            x: g.x * 1px; y: ground-y * 1px; width: g.w * 1px; height: 100px;
+            background: Snow.ice-dark;
+            Rectangle { y: 0px; width: 100%; height: 18px; background: Snow.snow; border-radius: 6px; }
+            Rectangle { y: 14px; width: 100%; height: 6px; background: Snow.shadow; }
+            for k[j] in floor(g.w / 90) : Rectangle {
+                x: (j * 90 + 30) * 1px; y: (40 + mod(j * 17, 30)) * 1px; width: 16px; height: 10px;
+                border-radius: 5px; background: Snow.ice; opacity: 0.7;
+            }
+        }
+        // Ice pillars.
+        for p in pillars : Rectangle {
+            x: p.x * 1px; y: (ground-y - p.h) * 1px; width: 60px; height: (p.h + 4) * 1px;
+            background: Snow.ice; border-radius: 4px; border-color: Snow.ice-dark; border-width: 3px;
+            Rectangle { x: -4px; y: -2px; width: 68px; height: 16px; border-radius: 6px; background: Snow.snow; }
+            Rectangle { x: 10px; y: 20px; width: 8px; height: max(0, p.h - 30) * 1px; border-radius: 4px; background: white; opacity: 0.35; }
+        }
+        // Floating ledges.
+        for l in ledges : Rectangle {
+            x: l.x * 1px; y: l.y * 1px; width: l.w * 1px; height: 22px;
+            background: Snow.ice; border-radius: 8px;
+            Rectangle { y: -3px; width: 100%; height: 11px; border-radius: 6px; background: Snow.snow; }
+            for d[j] in floor(l.w / 40) : Path {
+                x: (j * 40 + 16) * 1px; y: 20px; width: 8px; height: 12px;
+                commands: "M 0 0 L 8 0 L 4 12 Z"; fill: Snow.ice; opacity: 0.8;
+            }
+        }
+        // "?" blocks: bumped ones are plain ice, and bounce a moment.
+        for b[i] in blocks : Rectangle {
+            x: b.x * 1px;
+            y: (b.y - (popped-block == i && frame - popped-at < 10 ? 6 - abs(frame - popped-at - 5) : 0)) * 1px;
+            width: 40px; height: 40px; border-radius: 6px;
+            background: has(blocks-used, b.bit) ? #9db9d1 : #ffd56b;
+            border-color: has(blocks-used, b.bit) ? #7d9ab3 : #e09a1f; border-width: 3px;
+            Text {
+                text: "?"; visible: !has(blocks-used, b.bit); font-size: 26px; font-weight: 700; color: #9a5b00;
+                width: 100%; height: 100%; horizontal-alignment: center; vertical-alignment: center;
+            }
+        }
+        // A fish popping out of the block just bumped.
+        FishIcon {
+            visible: popped-block >= 0 && frame - popped-at < 30;
+            x: (popped-block >= 0 ? blocks[popped-block].x + 6 : 0) * 1px;
+            y: (popped-block >= 0 ? blocks[popped-block].y - 26 - (frame - popped-at) * 1.5 : 0) * 1px;
+            width: 28px; height: 22px; opacity: 1 - (frame - popped-at) / 30;
+        }
+        // Fish to collect, bobbing.
+        for f[i] in fishes : FishIcon {
+            visible: !has(fish-taken, f.bit);
+            x: f.x * 1px;
+            y: (f.y + 3 * zigzag(frame / 40 + i * 0.37) - 1.5) * 1px;
+            width: 28px; height: 22px;
+            color: mod(i, 3) == 0 ? #ff9f43 : (mod(i, 3) == 1 ? #ff7aa2 : #4fc3f7);
+        }
+        // The checkpoint flag (up once passed).
+        Rectangle {
+            x: checkpoint-x * 1px; y: (ground-y - 90) * 1px; width: 5px; height: 90px; background: #5b5f6a;
+            Rectangle {
+                x: 5px; y: respawn-x >= checkpoint-x ? 2px : 58px; width: 34px; height: 22px;
+                border-radius: 3px; background: respawn-x >= checkpoint-x ? #4caf50 : #ef5350;
+                animate y { duration: 400ms; easing: ease-out; }
+            }
+        }
+        // Home: an igloo, a dome cut by the ground, its rows of snow bricks
+        // as wide as the dome at their height.
+        Rectangle {
+            x: home-x * 1px; y: (ground-y - 88) * 1px; width: 170px; height: 90px; clip: true;
+            Rectangle { y: 3px; width: 170px; height: 170px; border-radius: 85px; background: Snow.snow; border-color: #c4d9ea; border-width: 3px; }
+            for r in 4 : Rectangle {
+                x: (85 - sqrt(82 * 82 - (88 - 18 - r * 18 - 3) * (88 - 18 - r * 18 - 3))) * 1px;
+                y: (18 + r * 18) * 1px;
+                width: 2 * sqrt(82 * 82 - (88 - 18 - r * 18 - 3) * (88 - 18 - r * 18 - 3)) * 1px;
+                height: 2px; background: #c4d9ea;
+            }
+            Rectangle { x: 58px; y: 34px; width: 54px; height: 80px; border-radius: 27px; background: #2f4b6e; }
+        }
+        Text {
+            x: home-x * 1px; y: (ground-y - 122) * 1px; width: 170px; text: "Home"; horizontal-alignment: center;
+            font-size: 18px; font-weight: 700; color: Snow.ink;
+        }
+        // Grumpy seals.
+        for s[i] in seals : GrumpySeal {
+            x: seal-x(i) * 1px;
+            y: (ground-y - 32) * 1px;
+            width: 50px; height: 32px;
+            facing: seal-facing(i);
+            wobble: 2 * zigzag(frame / 8 + i);
+            flat: has(seals-down, s.bit);
+            opacity: has(seals-down, s.bit) ? 0.7 : 1;
+        }
+        // Patrisio (blinking while hit-safe after coming back).
+        Patrisio {
+            x: (px - 7) * 1px;
+            y: (py - 8) * 1px;
+            width: 48px; height: 52px;
+            facing: root.facing;
+            step: walk;
+            airborne: !on-ground;
+            blinking: mod(frame + 90, 180) < 7;
+            dizzy: phase == Phase.ouch;
+            visible: phase != Phase.title && (frame >= safe-until || mod(frame, 8) < 5);
+        }
+    }
+
+    // Falling snow, in front of everything.
+    for s[i] in 40 : Rectangle {
+        x: mod(i * 97 + frame * (0.3 + 0.1 * mod(i, 4)) + 30 * zigzag(frame / 90 + i * 0.3) - camera * 0.8, 820) * 1px - 10px;
+        y: mod(i * 61 + frame * (0.8 + 0.2 * mod(i, 5)), 470) * 1px - 10px;
+        width: (3 + mod(i, 3)) * 1px; height: self.width; border-radius: self.width / 2;
+        background: white; opacity: 0.85;
+    }
+
+    // ---- What's shown on top ----
+
+    // The score: lives and fish.
+    HorizontalLayout {
+        x: 16px; y: 12px; height: 32px; spacing: 10px;
+        visible: phase != Phase.title;
+        Patrisio { width: 26px; height: 28px; }
+        Text { text: "× \{lives}"; font-size: 20px; font-weight: 700; color: Snow.ink; vertical-alignment: center; }
+        Rectangle { width: 16px; }
+        Empty { width: 30px; FishIcon { y: 4px; width: 30px; height: 24px; } }
+        Text { text: "\{fish} / \{fish-total}"; font-size: 20px; font-weight: 700; color: Snow.ink; vertical-alignment: center; }
+    }
+    Text {
+        x: parent.width - 180px; y: 12px; width: 164px; height: 32px;
+        text: "WORLD 1-1"; horizontal-alignment: right; vertical-alignment: center;
+        font-size: 18px; font-weight: 700; color: Snow.ink; visible: phase != Phase.title;
+    }
+
+    // Title, game over, home: a card in the middle.
+    Rectangle {
+        visible: phase == Phase.title || phase == Phase.game-over || phase == Phase.home;
+        x: 150px; y: 70px; width: 500px; height: 310px;
+        border-radius: 24px; background: #ffffffe6; border-color: #ffffff; border-width: 3px;
+        Patrisio {
+            x: 186px; y: 18px + 6px * zigzag(frame / 30); width: 128px; height: 139px;
+            facing: mod(floor(frame / 120), 2) == 0 ? 1 : -1;
+            airborne: zigzag(frame / 30) > 0.8;
+            blinking: mod(frame + 70, 150) < 8;
+            dizzy: phase == Phase.game-over;
+        }
+        Text {
+            y: 166px; width: 100%; horizontal-alignment: center; color: Snow.ink;
+            font-size: 30px; font-weight: 700;
+            text: phase == Phase.title ? "Patrisio's Snowy Adventure"
+                : (phase == Phase.home ? "Patrisio made it home!" : "Game over");
+        }
+        Text {
+            x: 30px; y: 210px; width: parent.width - 60px; horizontal-alignment: center; color: #46506a;
+            font-size: 15px; wrap: word-wrap;
+            text: phase == Phase.title ? "Arrows or A/D: waddle. Space: jump (hold it for higher).\nBump ? blocks, grab the fish, stomp the grumpy seals!"
+                : "Fish collected: \{fish} of \{fish-total}";
+        }
+        Text {
+            y: 266px; width: 100%; horizontal-alignment: center; color: #2f6db0;
+            font-size: 19px; font-weight: 700; opacity: 0.55 + 0.45 * zigzag(frame / 40);
+            text: phase == Phase.title ? "Press Space to start" : "Press Space to play again";
+        }
+    }
+}

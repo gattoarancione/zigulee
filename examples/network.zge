@@ -1,0 +1,70 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// HTTP requests: a GitHub repository's details, read from the JSON its API
+// answers. `zigulee-viewer examples/network.zge`.
+
+import { Button, LineEdit, Palette } from "std-widgets.zge";
+
+export component Network inherits Window {
+    width: 420px;
+    height: 240px;
+    title: "zigulee network";
+    background: Palette.background;
+    var in-out <string> repo: "ziglang/zig";
+
+    req := HttpRequest {
+        url: "https://api.github.com/repos/\{root.repo}";
+        headers: ["Accept: application/vnd.github+json"];
+    }
+    // Once, at the start.
+    Timer {
+        interval: 1ms;
+        triggered => {
+            req.send();
+            self.running = false;
+        }
+    }
+
+    VerticalLayout {
+        padding: 16px;
+        spacing: 8px;
+        alignment: start;
+        HorizontalLayout {
+            spacing: 8px;
+            LineEdit {
+                text <=> root.repo;
+                accepted(t) => { req.send(); }
+            }
+            Button {
+                text: req.loading ? "Loading…" : "Load";
+                clicked => { req.send(); }
+            }
+        }
+        Text {
+            text: json-get(req.response, "full_name");
+            font-size: 20px;
+            font-weight: 700;
+            color: Palette.foreground;
+        }
+        Text {
+            text: json-get(req.response, "description");
+            wrap: word-wrap;
+            color: Palette.foreground;
+        }
+        Text {
+            text: req.error != "" ? "No answer: \{req.error}"
+                : req.status == 200 ? "★ \{round(json-number(req.response, "stargazers_count"))} · \{round(json-number(req.response, "forks_count"))} forks · \{json-get(req.response, "language")}"
+                : req.status > 0 ? "HTTP \{req.status}: \{json-get(req.response, "message")}" : "";
+            color: Palette.secondary-foreground;
+        }
+        HorizontalLayout {
+            alignment: start;
+            Button {
+                text: "Open on GitHub";
+                enabled: req.status == 200;
+                clicked => { open-url(json-get(req.response, "html_url")); }
+            }
+        }
+    }
+}

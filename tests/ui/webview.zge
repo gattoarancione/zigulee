@@ -1,0 +1,34 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// A web view's page followed from .zge.
+export component WebApp inherits Window {
+    width: 300px;
+    height: 200px;
+    var in-out <string> page-title;
+    var in-out <string> js;
+    var in-out <int> errors;
+    var out <string> address: page.url;
+    var out <bool> back: page.can-go-back;
+
+    page := WebView {
+        x: 10px;
+        y: 20px;
+        width: 200px;
+        height: 100px;
+        url: "https://ziglang.org";
+        finished => { root.page-title = page.title; }
+        failed => { root.errors += 1; }
+        javascript-finished(result) => { root.js = result; }
+    }
+
+    public function go(to: string) {
+        page.url = to;
+    }
+    public function ask() {
+        page.run-javascript("6 * 7");
+    }
+    public function previous() {
+        page.back();
+    }
+}

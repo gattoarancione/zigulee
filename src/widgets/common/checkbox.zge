@@ -1,0 +1,194 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+import { Palette } from "palette.zge";
+import { Style } from "style.zge";
+
+// A check box with a label. Space toggles it when it has keyboard focus.
+export component CheckBox inherits Empty {
+    var in <string> text;
+    var in <bool> enabled: true;
+    var in-out <bool> checked;
+    var out <bool> has-focus: fs.has-focus;
+    var out <bool> has-hover: touch.has-hover;
+    callback toggled();
+
+    accessible-role: checkbox;
+    accessible-label: root.text;
+    accessible-checkable: true;
+    accessible-checked: root.checked;
+    accessible-enabled: root.enabled;
+    accessible-action-default => {
+        if root.enabled {
+            root.toggle();
+        }
+    }
+    function toggle() {
+        if root.enabled {
+            root.checked = !root.checked;
+            root.toggled();
+        }
+    }
+
+    min-height: Style.control-height;
+    min-width: Style.check-size + (text == "" ? 0px : 8px + label.preferred-width);
+    preferred-height: Style.control-height;
+    max-height: Style.control-height;
+    preferred-width: Style.check-size + (text == "" ? 0px : 8px + label.preferred-width);
+
+    box := Rectangle {
+        x: 0px;
+        y: (parent.height - Style.check-size) / 2;
+        width: Style.check-size;
+        height: Style.check-size;
+        border-radius: Style.check-radius;
+        drop-shadow-offset-y: Style.control-shadow-y;
+        drop-shadow-blur: Style.control-shadow-blur;
+        drop-shadow-color: root.enabled ? Palette.control-shadow : #00000000;
+        border-width: root.checked ? 0px : Style.check-border-width;
+        border-color: root.enabled ? Palette.strong-border : Palette.disabled-foreground;
+        background: !root.enabled ? (root.checked ? Palette.disabled-foreground : Palette.control-disabled)
+            : root.checked ? (touch.pressed ? Palette.accent-pressed : touch.has-hover ? Palette.accent-hover : Palette.accent-background)
+            : touch.pressed ? Palette.control-pressed : touch.has-hover ? Palette.control-hover : Palette.control-background;
+        animate background { duration: 80ms; }
+
+        Path {
+            x: (parent.width - 10px) / 2;
+            y: (parent.height - 8px) / 2;
+            width: 10px;
+            height: 8px;
+            commands: "M 0 4 L 3.5 7.5 L 10 0";
+            stroke: Palette.accent-foreground;
+            stroke-width: 1.5px;
+            visible: root.checked;
+        }
+        Rectangle {
+            x: 0px - Style.focus-ring-offset;
+            y: 0px - Style.focus-ring-offset;
+            width: parent.width + 2 * Style.focus-ring-offset;
+            height: parent.height + 2 * Style.focus-ring-offset;
+            border-radius: Style.check-radius + Style.focus-ring-offset;
+            border-width: Style.focus-ring-width;
+            border-color: Palette.focus-ring;
+            visible: fs.has-focus;
+        }
+    }
+    label := Text {
+        x: Style.check-size + 8px;
+        width: parent.width - Style.check-size - 8px;
+        text: root.text;
+        font-size: Style.font-size;
+        vertical-alignment: center;
+        color: root.enabled ? Palette.foreground : Palette.disabled-foreground;
+    }
+    fs := FocusScope {
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if event.text == Key.Space {
+                root.toggle();
+                return accept;
+            }
+            return reject;
+        }
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.toggle(); }
+    }
+}
+
+// An on/off toggle switch with a label.
+export component Switch inherits Empty {
+    var in <string> text;
+    var in <bool> enabled: true;
+    var in-out <bool> checked;
+    var out <bool> has-focus: fs.has-focus;
+    var out <bool> has-hover: touch.has-hover;
+    callback toggled();
+
+    accessible-role: switch;
+    accessible-label: root.text;
+    accessible-checkable: true;
+    accessible-checked: root.checked;
+    accessible-enabled: root.enabled;
+    accessible-action-default => {
+        if root.enabled {
+            root.toggle();
+        }
+    }
+    function toggle() {
+        if root.enabled {
+            root.checked = !root.checked;
+            root.toggled();
+        }
+    }
+
+    var <length> knob-size: (checked ? Style.switch-knob-on : Style.switch-knob-off) + (touch.pressed || touch.has-hover ? Style.switch-knob-grow : 0px);
+
+    min-height: Style.control-height;
+    min-width: Style.switch-width + (text == "" ? 0px : 12px + label.preferred-width);
+    preferred-height: Style.control-height;
+    max-height: Style.control-height;
+    preferred-width: Style.switch-width + (text == "" ? 0px : 12px + label.preferred-width);
+
+    track := Rectangle {
+        x: 0px;
+        y: (parent.height - Style.switch-height) / 2;
+        width: Style.switch-width;
+        height: Style.switch-height;
+        border-radius: Style.switch-radius;
+        border-width: root.checked ? 0px : Style.switch-border-width;
+        border-color: root.enabled ? Palette.strong-border : Palette.disabled-foreground;
+        background: !root.enabled ? (root.checked ? Palette.disabled-foreground : Palette.control-disabled)
+            : root.checked ? (touch.has-hover ? Palette.accent-hover : Palette.accent-background)
+            : touch.has-hover ? Palette.switch-track-hover : Palette.switch-track;
+        animate background { duration: 120ms; }
+
+        knob := Rectangle {
+            width: root.knob-size + (touch.pressed ? 3px : 0px);
+            height: root.knob-size;
+            x: root.checked ? parent.width - self.width - (parent.height - root.knob-size) / 2 : (parent.height - root.knob-size) / 2;
+            y: (parent.height - self.height) / 2;
+            border-radius: min(root.knob-size / 2, Style.switch-radius);
+            background: !root.enabled ? (root.checked ? Palette.control-disabled : Palette.disabled-foreground)
+                : root.checked ? Palette.switch-knob-checked : Palette.switch-knob;
+            drop-shadow-offset-y: Style.knob-shadow-y;
+            drop-shadow-blur: Style.knob-shadow-blur;
+            drop-shadow-color: root.enabled ? Palette.knob-shadow : #00000000;
+            animate x, width { duration: 160ms; easing: ease-out; }
+            animate height { duration: 80ms; }
+        }
+        Rectangle {
+            x: 0px - Style.focus-ring-offset;
+            y: 0px - Style.focus-ring-offset;
+            width: parent.width + 2 * Style.focus-ring-offset;
+            height: parent.height + 2 * Style.focus-ring-offset;
+            border-radius: Style.switch-radius + Style.focus-ring-offset;
+            border-width: Style.focus-ring-width;
+            border-color: Palette.focus-ring;
+            visible: fs.has-focus;
+        }
+    }
+    label := Text {
+        x: Style.switch-width + 12px;
+        width: parent.width - Style.switch-width - 12px;
+        text: root.text;
+        font-size: Style.font-size;
+        vertical-alignment: center;
+        color: root.enabled ? Palette.foreground : Palette.disabled-foreground;
+    }
+    fs := FocusScope {
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if event.text == Key.Space {
+                root.toggle();
+                return accept;
+            }
+            return reject;
+        }
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.toggle(); }
+    }
+}

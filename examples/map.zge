@@ -1,0 +1,84 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+import { Button, Palette } from "std-widgets.zge";
+
+// A map of OpenStreetMap's tiles: drag it, zoom with the wheel, a pinch or
+// a double click; a click drops a pin. Where you are shows (once allowed)
+// as a blue dot, and "Here" goes there.
+export component Map inherits Window {
+    preferred-width: 640px;
+    preferred-height: 480px;
+    title: "Map";
+    background: Palette.background;
+    var in-out <float> pin-latitude: 45.4642;
+    var in-out <float> pin-longitude: 9.19;
+
+    here := PositionSource { active: true; minimum-interval: 2s; }
+
+    VerticalLayout {
+        map := MapView {
+            vertical-stretch: 1;
+            latitude: 45.4642;
+            longitude: 9.19;
+            zoom: 12;
+            clicked(lat, lon) => {
+                root.pin-latitude = lat;
+                root.pin-longitude = lon;
+            }
+            // The pin: its point on the place.
+            MapItem {
+                latitude: root.pin-latitude;
+                longitude: root.pin-longitude;
+                width: 18px;
+                height: 26px;
+                anchor-y: 1;
+                Rectangle {
+                    width: 18px;
+                    height: 18px;
+                    border-radius: 9px;
+                    background: #dc2626;
+                    border-width: 2px;
+                    border-color: white;
+                }
+                Rectangle { x: 8px; y: 17px; width: 2px; height: 9px; background: #dc2626; }
+            }
+            // Where you are, within its accuracy.
+            MapItem {
+                visible: here.valid;
+                latitude: here.latitude;
+                longitude: here.longitude;
+                width: 16px;
+                height: 16px;
+                Rectangle {
+                    border-radius: 8px;
+                    background: #2563eb;
+                    border-width: 3px;
+                    border-color: white;
+                }
+            }
+        }
+        HorizontalLayout {
+            padding: 8px;
+            spacing: 8px;
+            Button { text: "−"; clicked => { map.zoom-out(); } }
+            Button { text: "+"; clicked => { map.zoom-in(); } }
+            Button {
+                text: "Here";
+                enabled: here.valid;
+                clicked => {
+                    map.latitude = here.latitude;
+                    map.longitude = here.longitude;
+                    map.zoom = 15;
+                }
+            }
+            Text {
+                horizontal-stretch: 1;
+                vertical-alignment: center;
+                horizontal-alignment: right;
+                color: Palette.secondary-foreground;
+                text: "\{round(root.pin-latitude * 10000) / 10000}, \{round(root.pin-longitude * 10000) / 10000}";
+            }
+        }
+    }
+}

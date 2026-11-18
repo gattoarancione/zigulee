@@ -1,0 +1,83 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// `for` and `if`: exercised by tests/ui_test.zig.
+
+component Row inherits Rectangle {
+    var in <string> label;
+    var in <bool> selected;
+    callback picked();
+    height: 20px;
+    background: selected ? #6366f1 : transparent;
+    text := Text { text: root.label; }
+    TouchArea { clicked => { root.picked(); } }
+}
+
+export component Lists inherits Window {
+    width: 200px;
+    height: 400px;
+
+    var in <[string]> names: ["alpha", "beta", "gamma"];
+    var in-out <int> selected: -1;
+    var in-out <int> dots: 2;
+    var in-out <bool> show-footer: false;
+    var out <string> last-picked;
+    var out <int> name-count: names.length;
+    var out <string> second: names[1];
+
+    column := VerticalLayout {
+        // A model property, with an index, inside a layout.
+        for name[i] in names : row := Row {
+            label: "\{i + 1}. \{name}";
+            selected: i == root.selected;
+            picked => {
+                root.selected = i;
+                last-picked = name;
+            }
+        }
+        // An int is a range model; nested loops see the outer variables.
+        for d in dots : HorizontalLayout {
+            height: 10px;
+            for c in 3 : Rectangle {
+                background: (d + c) == 2 ? red : blue;
+            }
+        }
+        // An array literal.
+        for color in [#ff0000, #00ff00] : Rectangle { height: 5px; background: color; }
+
+        if show-footer : footer := Text { text: "\{names.length} names"; }
+    }
+}
+
+// `for` and `if` in a GridLayout: repeated cells take consecutive columns.
+export component Grid inherits Window {
+    width: 400px;
+    height: 100px;
+    var in-out <int> cells: 3;
+    var in-out <bool> extra: false;
+
+    GridLayout {
+        Row {
+            for i in cells : Rectangle { background: #ff0000; }
+            tail := Rectangle { background: #00ff00; }
+            if extra : Rectangle { background: #0000ff; }
+        }
+        Row {
+            below := Rectangle { colspan: 2; }
+        }
+    }
+}
+
+// Array literals with non-constant elements.
+export component Arrays inherits Window {
+    width: 100px;
+    height: 200px;
+    var in-out <int> a: 1;
+    var in-out <string> name: "x";
+    var out <int> second: [a, a * 10][1];
+
+    column := VerticalLayout {
+        for v[i] in [a, a * 10, 7] : Text { text: "\{i}:\{v}"; }
+        for s in [name, "fixed"] : Text { text: s; }
+    }
+}

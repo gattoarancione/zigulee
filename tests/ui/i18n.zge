@@ -1,0 +1,23 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// Translations: exercised by tests/ui_test.zig.
+
+export component Translated inherits Window {
+    width: 200px;
+    height: 120px;
+
+    var in-out <string> name: "Ada";
+    var in-out <int> count: 1;
+    var out <string> greeting: @tr("Hello, {}!", name);
+    var out <string> files: @tr("{n} file" | "{n} files" % count);
+    var out <string> open: @tr("menu" => "Open");
+    var out <string> swapped: @tr("{1} before {0}", name, count);
+    var out <string> plain: @tr("Plain text");
+
+    VerticalLayout {
+        Text { text: greeting; }
+        Text { text: files; }
+        Text { text: @tr("Save"); }
+    }
+}

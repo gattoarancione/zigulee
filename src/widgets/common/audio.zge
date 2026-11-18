@@ -1,0 +1,19 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// Sound effects and music: an Audio element with the settings each needs.
+
+// A sound effect: `jump.play()` plays it again from the start, over the
+// voices still playing (up to `voices`).
+export component Sound inherits Audio {
+    voices: 4;
+}
+
+// Music: loops, rises over `fade-in` when it starts and falls over
+// `fade-out` when it stops. A new `source` fades in while the old one fades
+// out.
+export component Music inherits Audio {
+    loop: true;
+    fade-in: 500ms;
+    fade-out: 1s;
+}

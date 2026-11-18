@@ -1,0 +1,102 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+import { Palette } from "palette.zge";
+import { Style } from "style.zge";
+
+// Tabs over a content area. The children are the content; show the page
+// of `current-index` (for example with `if tabs.current-index == 0 : ...`).
+// The left and right arrow keys switch tabs when the bar has focus.
+export component TabWidget inherits Empty {
+    var in <[string]> tabs;
+    var in-out <int> current-index;
+    var in <bool> enabled: true;
+    // Called when the user picks a tab.
+    callback current-changed(int);
+    public function select(i: int) {
+        if root.enabled && i >= 0 && i < root.tabs.length && i != root.current-index {
+            root.current-index = i;
+            root.current-changed(i);
+        }
+    }
+
+    min-width: 80px;
+    min-height: 80px;
+    preferred-width: 300px;
+    preferred-height: 200px;
+
+    VerticalLayout {
+        bar := HorizontalLayout {
+            height: 36px;
+            alignment: start;
+            spacing: 2px;
+            for title[i] in root.tabs : Rectangle {
+                width: label.preferred-width + 24px;
+                accessible-role: tab;
+                accessible-label: title;
+                accessible-checked: i == root.current-index;
+                accessible-enabled: root.enabled;
+                accessible-action-default => {
+                    if root.enabled {
+                        root.select(i);
+                    }
+                }
+                border-radius: Style.control-radius;
+                background: tab-touch.pressed ? Palette.control-pressed : tab-touch.has-hover ? Palette.control-hover : #00000000;
+                label := Text {
+                    text: title;
+                    font-size: Style.font-size;
+                    font-weight: i == root.current-index ? 700 : 400;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    color: !root.enabled ? Palette.disabled-foreground
+                        : i == root.current-index ? Palette.foreground : Palette.secondary-foreground;
+                }
+                Rectangle {
+                    visible: i == root.current-index;
+                    x: (parent.width - self.width) / 2;
+                    y: parent.height - 3px;
+                    width: Style.tab-indicator-width > 0px ? Style.tab-indicator-width : parent.width;
+                    height: 3px;
+                    border-radius: 1.5px;
+                    background: Palette.accent-background;
+                }
+                tab-touch := TouchArea {
+                    enabled: root.enabled;
+                    clicked => {
+                        keys.focus();
+                        root.select(i);
+                    }
+                }
+            }
+        }
+        Rectangle {
+            height: 1px;
+            background: Palette.border;
+        }
+        content := Rectangle {
+            vertical-stretch: 1;
+            accessible-role: tab-panel;
+            clip: true;
+            @children
+        }
+    }
+    keys := FocusScope {
+        x: 0px;
+        y: 0px;
+        width: 0px;
+        height: 0px;
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if event.text == Key.LeftArrow {
+                root.select(root.current-index - 1);
+                return accept;
+            }
+            if event.text == Key.RightArrow {
+                root.select(root.current-index + 1);
+                return accept;
+            }
+            return reject;
+        }
+    }
+}

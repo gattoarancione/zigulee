@@ -1,0 +1,30 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// A tray icon with a menu, and a notification sent from it.
+export component TrayApp inherits Window {
+    width: 100px;
+    height: 100px;
+    var in-out <bool> paused;
+    var in-out <int> clicked;
+    var out <bool> tray-available: icon.available;
+    var out <bool> notifications-available: note.available;
+
+    icon := SystemTrayIcon {
+        tooltip: root.paused ? "Paused" : "Running";
+        PlatformMenuItem {
+            text: "Paused";
+            checked: root.paused;
+            activated => { root.paused = !root.paused; }
+        }
+        PlatformMenuItem {
+            text: "Notify";
+            activated => { note.send(); }
+        }
+    }
+    note := Notification {
+        title: root.paused ? "Paused" : "Running";
+        body: "Click me";
+        clicked => { root.clicked += 1; }
+    }
+}

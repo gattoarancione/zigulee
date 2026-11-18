@@ -1,0 +1,61 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+import { Button, Palette } from "std-widgets.zge";
+
+// An icon in the system tray with a menu, and desktop notifications.
+export component TrayDemo inherits Window {
+    preferred-width: 360px;
+    preferred-height: 200px;
+    background: Palette.background;
+    var in-out <int> sent;
+    var in-out <int> clicked;
+    var in-out <bool> paused;
+
+    SystemTrayIcon {
+        tooltip: root.paused ? "Zigulee (paused)" : "Zigulee";
+        PlatformMenuItem {
+            text: "Notify";
+            activated => {
+                note.send();
+                root.sent += 1;
+            }
+        }
+        PlatformMenuItem {
+            text: "Paused";
+            checked: root.paused;
+            activated => { root.paused = !root.paused; }
+        }
+        PlatformMenuItem { separator: true; }
+        PlatformMenuItem {
+            text: "Sent \{root.sent}, clicked \{root.clicked}";
+            enabled: false;
+        }
+    }
+
+    note := Notification {
+        title: "Hello from zigulee";
+        body: "Notification number \{root.sent + 1}. Click it.";
+        clicked => { root.clicked += 1; }
+    }
+
+    VerticalLayout {
+        padding: 16px;
+        spacing: 12px;
+        Text {
+            text: note.available ? "Notifications are shown here." : "No notifications here.";
+            color: Palette.foreground;
+        }
+        Text {
+            text: "Sent \{root.sent}, clicked \{root.clicked}.";
+            color: Palette.foreground;
+        }
+        Button {
+            text: "Notify";
+            clicked => {
+                note.send();
+                root.sent += 1;
+            }
+        }
+    }
+}

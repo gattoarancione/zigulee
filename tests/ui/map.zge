@@ -1,0 +1,49 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// A map without tiles (no network in tests), its markers and a line:
+// compared interpreted and compiled (tests/interpreter_test.zig).
+
+struct Place { lat: float, lon: float }
+
+export component Places inherits Window {
+    width: 320px;
+    height: 200px;
+    background: #ffffff;
+    var in-out <int> clicks: 0;
+    var in-out <float> clicked-longitude: 0;
+    var in <[Place]> places: [{ lat: 45.4642, lon: 9.19 }, { lat: 45.0703, lon: 7.6869 }];
+
+    map := MapView {
+        tile-url: "";
+        latitude: 45;
+        longitude: 9;
+        zoom: 5;
+        clicked(lat, lon) => {
+            root.clicks += 1;
+            root.clicked-longitude = lon;
+        }
+        // A route from Milan to Turin, and an outline around Lombardy-ish.
+        MapPolyline {
+            coordinates: [45.4642, 9.19, 45.0703, 7.6869];
+            stroke: #dc2626;
+            stroke-width: 4px;
+        }
+        MapPolyline {
+            coordinates: [46.5, 8.5, 46.5, 11, 44.7, 11, 44.7, 8.5];
+            closed: true;
+            fill: #2563eb30;
+            stroke: #2563eb;
+            stroke-width: 1px;
+        }
+        // Pins: their bottom middle on the place.
+        for place in root.places : MapItem {
+            latitude: place.lat;
+            longitude: place.lon;
+            width: 14px;
+            height: 20px;
+            anchor-y: 1;
+            Rectangle { background: #16a34a; border-radius: 7px; }
+        }
+    }
+}

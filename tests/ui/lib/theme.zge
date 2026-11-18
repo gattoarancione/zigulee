@@ -1,0 +1,11 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// A global shared by every component that uses it.
+export global Theme {
+    var in-out <bool> dark: false;
+    var out <color> text: dark ? #ffffff : #000000;
+    var out <int> clicks: 0;
+    callback clicked();
+    clicked => { clicks += 1; }
+}

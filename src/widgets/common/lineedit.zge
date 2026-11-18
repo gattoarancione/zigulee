@@ -1,0 +1,103 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+import { Palette } from "palette.zge";
+import { Style } from "style.zge";
+
+// A single-line text field.
+export component LineEdit inherits Rectangle {
+    var in-out <string> text <=> input.text;
+    // Shown while the text is empty.
+    var in <string> placeholder-text;
+    var in <length> font-size: Style.font-size;
+    var in <bool> enabled: true;
+    var in <bool> read-only;
+    // `password` shows bullets.
+    var in <InputType> input-type;
+    // Where the text sits across the field (the placeholder too).
+    var in <TextHorizontalAlignment> horizontal-alignment: left;
+    var out <bool> has-focus: input.has-focus;
+    // Return was pressed.
+    callback accepted(string);
+    // The user changed the text.
+    callback edited(string);
+
+    public function focus() {
+        input.focus();
+    }
+    public function select-all() {
+        input.select-all();
+    }
+    public function clear-selection() {
+        input.clear-selection();
+    }
+    public function cut() {
+        input.cut();
+    }
+    public function copy() {
+        input.copy();
+    }
+    public function paste() {
+        input.paste();
+    }
+
+    min-width: 60px;
+    min-height: Style.control-height;
+    preferred-width: 200px;
+    preferred-height: Style.control-height;
+    max-height: Style.control-height;
+
+    border-radius: Style.control-radius;
+    border-width: input.has-focus ? Style.input-focus-border-width : Style.input-border-width;
+    border-color: input.has-focus ? Palette.input-focus-border : Palette.border;
+    background: !enabled ? Palette.control-disabled
+        : input.has-focus ? Palette.input-focused-background : Palette.input-background;
+
+    // Clicks in the padding focus the field too.
+    TouchArea {
+        enabled: root.enabled;
+        clicked => { input.focus(); }
+    }
+    Text {
+        x: 11px;
+        width: parent.width - 22px;
+        text: root.placeholder-text;
+        font-size: root.font-size;
+        horizontal-alignment: root.horizontal-alignment;
+        vertical-alignment: center;
+        color: Palette.placeholder-foreground;
+        visible: input.text == "";
+        // Read out as the field's placeholder instead.
+        accessible-role: none;
+    }
+    input := TextInput {
+        x: 11px;
+        width: parent.width - 22px;
+        font-size: root.font-size;
+        enabled: root.enabled;
+        read-only: root.read-only;
+        accessible-placeholder-text: root.placeholder-text;
+        accessible-enabled: root.enabled;
+        accessible-action-set-value(v) => {
+            if !root.read-only {
+                self.text = v;
+                root.edited(v);
+            }
+        }
+        input-type: root.input-type;
+        horizontal-alignment: root.horizontal-alignment;
+        color: root.enabled ? Palette.foreground : Palette.disabled-foreground;
+        selection-background-color: Palette.selection-background;
+        accepted => { root.accepted(self.text); }
+        edited => { root.edited(self.text); }
+    }
+    // The accent line of a focused field.
+    Rectangle {
+        x: 1px;
+        y: parent.height - Style.input-underline;
+        width: parent.width - 2px;
+        height: Style.input-underline;
+        background: Palette.accent-background;
+        visible: input.has-focus && Style.input-underline > 0px;
+    }
+}

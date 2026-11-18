@@ -1,0 +1,246 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+import { Palette } from "palette.zge";
+import { Style } from "style.zge";
+
+// A scrolling area with scroll bars. Its children are its content; the
+// content is as tall as their layout needs.
+export component ScrollView inherits Rectangle {
+    var in <bool> enabled: true;
+    var in-out <length> viewport-x <=> flick.viewport-x;
+    var in-out <length> viewport-y <=> flick.viewport-y;
+    var out <length> viewport-width: flick.viewport-width;
+    var out <length> viewport-height: flick.viewport-height;
+    var out <length> visible-width: flick.width;
+    var out <length> visible-height: flick.height;
+    // Called when the user scrolls.
+    callback scrolled();
+
+    // Dragging or clicking a scroll bar: the thumb's middle follows the
+    // pointer.
+    function v-scroll-to() {
+        flick.viewport-y = 0px - max(0, min(1, (vtouch.mouse-y - root.v-thumb / 2) / max(1px, root.v-track - root.v-thumb))) * (flick.viewport-height - flick.height);
+        root.scrolled();
+    }
+    function h-scroll-to() {
+        flick.viewport-x = 0px - max(0, min(1, (htouch.mouse-x - root.h-thumb / 2) / max(1px, root.h-track - root.h-thumb))) * (flick.viewport-width - flick.width);
+        root.scrolled();
+    }
+
+    var <bool> scrolls-v: flick.viewport-height > flick.height + 0.5px;
+    var <bool> scrolls-h: flick.viewport-width > flick.width + 0.5px;
+    var <length> v-track: root.height - 4px - (scrolls-h ? 8px : 0px);
+    var <length> h-track: root.width - 4px - (scrolls-v ? 8px : 0px);
+    var <length> v-thumb: max(24px, v-track * (flick.height / max(1px, flick.viewport-height)));
+    var <length> h-thumb: max(24px, h-track * (flick.width / max(1px, flick.viewport-width)));
+
+    min-width: 40px;
+    min-height: 40px;
+    preferred-width: 300px;
+    preferred-height: 200px;
+    border-radius: Style.control-radius;
+    border-width: 1px;
+    border-color: Palette.border;
+    background: Palette.alternate-background;
+    clip: true;
+
+    flick := Flickable {
+        x: 1px;
+        y: 1px;
+        width: parent.width - 2px;
+        height: parent.height - 2px;
+        interactive: root.enabled;
+        flicked => { root.scrolled(); }
+        @children
+    }
+
+    // Vertical scroll bar.
+    Rectangle {
+        visible: root.scrolls-v;
+        x: parent.width - 2px - self.width;
+        y: 2px;
+        width: vtouch.has-hover || vtouch.pressed ? 6px : 3px;
+        height: root.v-track;
+        animate width { duration: 100ms; }
+
+        Rectangle {
+            y: (parent.height - root.v-thumb) * ((0px - flick.viewport-y) / max(1px, flick.viewport-height - flick.height));
+            height: root.v-thumb;
+            border-radius: self.width / 2;
+            background: vtouch.has-hover || vtouch.pressed ? Palette.scrollbar-hover : Palette.scrollbar;
+        }
+        vtouch := TouchArea {
+            moved => {
+                if self.pressed {
+                    root.v-scroll-to();
+                }
+            }
+            changed pressed => {
+                if self.pressed {
+                    root.v-scroll-to();
+                }
+            }
+        }
+    }
+
+    // Horizontal scroll bar.
+    Rectangle {
+        visible: root.scrolls-h;
+        x: 2px;
+        y: parent.height - 2px - self.height;
+        width: root.h-track;
+        height: htouch.has-hover || htouch.pressed ? 6px : 3px;
+        animate height { duration: 100ms; }
+
+        Rectangle {
+            x: (parent.width - root.h-thumb) * ((0px - flick.viewport-x) / max(1px, flick.viewport-width - flick.width));
+            width: root.h-thumb;
+            border-radius: self.height / 2;
+            background: htouch.has-hover || htouch.pressed ? Palette.scrollbar-hover : Palette.scrollbar;
+        }
+        htouch := TouchArea {
+            moved => {
+                if self.pressed {
+                    root.h-scroll-to();
+                }
+            }
+            changed pressed => {
+                if self.pressed {
+                    root.h-scroll-to();
+                }
+            }
+        }
+    }
+}
+
+// A vertical list in a ScrollView: `ListView { for item in model : Row {} }`.
+// The rows are all as tall as the first (or `row-height`), or, with
+// `variable-row-height`, each as tall as it is (those not yet shown
+// estimated at the mean of those that were), and only those in view have
+// instances: scrolling hands them on to the rows coming in
+// (with their own state, a text typed in one, say). `sections` names each
+// row's section: one starts, under its header, where the name changes; the
+// header of the section at the top stays pinned there.
+export component ListView inherits ScrollView {
+    var in <length> row-height;
+    var in <bool> variable-row-height;
+    var in <length> spacing;
+    var in <[string]> sections;
+    var in <length> section-height: 28px;
+    var out <int> count: list.row-count;
+    var out <string> current-section: list.current-section;
+
+    list := ListLayout {
+        viewport-y: root.viewport-y;
+        visible-height: root.visible-height;
+        row-height: root.row-height;
+        variable-row-height: root.variable-row-height;
+        spacing: root.spacing;
+        sections: root.sections;
+        section-height: root.section-height;
+        @children
+    }
+
+    // Section headers, and the current one pinned at the top.
+    for name[s] in list.section-names : Rectangle {
+        y: list.section-ys[s];
+        height: root.section-height;
+        background: Palette.control-background;
+        Text {
+            x: 12px;
+            width: parent.width - 24px;
+            text: name;
+            overflow: elide;
+            font-size: 12px;
+            font-weight: 700;
+            vertical-alignment: center;
+            color: Palette.secondary-foreground;
+        }
+    }
+    Rectangle {
+        visible: root.sections.length > 0 && list.row-count > 0;
+        y: 0px - root.viewport-y + list.current-section-offset;
+        height: root.section-height;
+        background: Palette.control-background;
+        Text {
+            x: 12px;
+            width: parent.width - 24px;
+            text: list.current-section;
+            overflow: elide;
+            font-size: 12px;
+            font-weight: 700;
+            vertical-alignment: center;
+            color: Palette.secondary-foreground;
+        }
+    }
+}
+
+// A grid of cells in a ScrollView: `GridView { for item in model : Cell {} }`
+// (cells at their sizes, left to right, wrapping into rows `spacing`
+// apart; it scrolls down).
+export component GridView inherits ScrollView {
+    var in <length> spacing: 8px;
+    FlowLayout {
+        padding: root.spacing;
+        spacing: root.spacing;
+        @children
+    }
+}
+
+// A scroll bar on its own (for a Flickable, say): the part shown (`size`,
+// a fraction of the whole) at `position` (from 0 to 1 - size). Dragging
+// the thumb or clicking the track moves it (`scrolled(position)`).
+export component ScrollBar inherits Rectangle {
+    var in <bool> vertical: true;
+    var in <float> size: 0.25;
+    var in-out <float> position;
+    var in <bool> enabled: true;
+    // The user moved it.
+    callback scrolled(float);
+
+    accessible-role: slider;
+    accessible-value: "\{round(root.position * 100)}%";
+
+    var <length> track: root.vertical ? root.height : root.width;
+    var <length> thumb: max(24px, root.track * min(1, max(0, root.size)));
+    var <float> room: max(0, 1 - root.size);
+
+    function scroll-to(along: length) {
+        let p = root.room * max(0, min(1, (along - root.thumb / 2) / max(1px, root.track - root.thumb)));
+        if p != root.position {
+            root.position = p;
+            root.scrolled(p);
+        }
+    }
+
+    preferred-width: root.vertical ? 10px : 120px;
+    preferred-height: root.vertical ? 120px : 10px;
+    min-width: root.vertical ? 6px : 40px;
+    min-height: root.vertical ? 40px : 6px;
+    background: #00000000;
+
+    Rectangle {
+        x: root.vertical ? (parent.width - self.width) / 2 : (root.track - root.thumb) * (root.room > 0 ? root.position / root.room : 0);
+        y: root.vertical ? (root.track - root.thumb) * (root.room > 0 ? root.position / root.room : 0) : (parent.height - self.height) / 2;
+        width: root.vertical ? (touch.has-hover || touch.pressed ? 6px : 3px) : root.thumb;
+        height: root.vertical ? root.thumb : (touch.has-hover || touch.pressed ? 6px : 3px);
+        border-radius: 3px;
+        background: touch.has-hover || touch.pressed ? Palette.scrollbar-hover : Palette.scrollbar;
+        visible: root.size < 1;
+        animate width, height { duration: 100ms; }
+    }
+    touch := TouchArea {
+        enabled: root.enabled && root.size < 1;
+        // A click on the track (handled at the release, so a quick click
+        // counts too), or a drag.
+        clicked => {
+            root.scroll-to(root.vertical ? self.mouse-y : self.mouse-x);
+        }
+        moved => {
+            if self.pressed {
+                root.scroll-to(root.vertical ? self.mouse-y : self.mouse-x);
+            }
+        }
+    }
+}

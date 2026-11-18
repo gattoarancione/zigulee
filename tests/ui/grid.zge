@@ -1,0 +1,37 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// A grid view, a flow layout, a scroll bar.
+import { GridView, ScrollBar } from "std-widgets.zge";
+
+export component Grid inherits Window {
+    width: 240px;
+    height: 260px;
+    background: #ffffff;
+    var in <[string]> names: ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"];
+    var in-out <float> scroll;
+    var out <int> picked: -1;
+
+    VerticalLayout {
+        grid := GridView {
+            height: 150px;
+            for name[i] in root.names : Rectangle {
+                width: 60px;
+                height: 50px;
+                background: i == root.picked ? #2563eb : #dbeafe;
+                Text { text: name; }
+                TouchArea { clicked => { root.picked = i; } }
+            }
+        }
+        HorizontalLayout {
+            flow := FlowLayout {
+                spacing: 4px;
+                for w in 5 : Rectangle { width: 30px + w * 10px; height: 20px; background: #fde68a; }
+            }
+            bar := ScrollBar {
+                size: 0.4;
+                position <=> root.scroll;
+            }
+        }
+    }
+}

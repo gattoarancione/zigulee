@@ -1,0 +1,223 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+import { Palette } from "palette.zge";
+import { Style } from "style.zge";
+import { ScrollView } from "scrollview.zge";
+
+// A row of a tree: its text and depth (0 for the top rows; a child's is
+// one more than its parent's, right after it).
+export struct TreeItem {
+    text: string,
+    level: int,
+}
+
+// A scrolling tree: its rows (`model`, in order, with their depths), those
+// under collapsed ones hidden, and a current one (`current-item`, a row of
+// the model). A click on an arrow expands or collapses; on a row, makes it
+// current. With the keyboard: Up and Down move, Right expands (or goes to
+// the first child), Left collapses (or goes to the parent), Space or
+// Return toggles. With `selection-mode: extended`, the user selects
+// several rows as on desktops (Ctrl- or Cmd-click adds or removes one,
+// Shift-click or Shift and Up or Down the rows shown between, Ctrl+A or
+// Cmd+A all); with `multiple`, each click adds or removes one. In both,
+// Space adds or removes the current row (Return still toggles).
+// `selected-items` are the rows selected (in `single` mode, the current
+// one).
+export component TreeView inherits ScrollView {
+    var in <[TreeItem]> model;
+    var in <bool> initially-expanded;
+    var in-out <int> current-item: -1;
+    var in <SelectionMode> selection-mode: single;
+    var out <[int]> selected-items: sel.selected-rows;
+    // Called when the user makes a row current.
+    callback current-item-changed(int);
+    // Called when the rows selected change.
+    callback selection-changed();
+
+    accessible-role: list;
+    accessible-multiselectable: root.selection-mode != SelectionMode.single;
+
+    var <length> row-height: 30px;
+    var <length> indent: 18px;
+
+    public function expand-all() { state.expand-all(); }
+    public function collapse-all() { state.collapse-all(); }
+    public function toggle(row: int) { state.toggle(row); }
+
+    // Where `row` is among the rows shown (-1: hidden).
+    function shown-index(row: int) -> int {
+        for r[k] in state.shown {
+            if r == row { return k; }
+        }
+        return -1;
+    }
+    function set-current-item(row: int) {
+        if row >= 0 && row < root.model.length && row != root.current-item {
+            root.current-item = row;
+            let k = root.shown-index(row);
+            if k >= 0 {
+                // Keep it in view.
+                if k * root.row-height < 0px - root.viewport-y {
+                    root.viewport-y = 0px - k * root.row-height;
+                }
+                if (k + 1) * root.row-height > root.visible-height - root.viewport-y {
+                    root.viewport-y = root.visible-height - (k + 1) * root.row-height;
+                }
+            }
+            root.current-item-changed(row);
+        }
+    }
+    public function select-all() { if root.selection-mode != SelectionMode.single { sel.select-all(); } }
+    public function clear-selection() { sel.clear(); }
+    public function set-selected(row: int, on: bool) {
+        if root.selection-mode == SelectionMode.single {
+            if on { root.current-item = row; } else if row == root.current-item { root.current-item = -1; }
+        } else {
+            sel.set-selected(row, on);
+        }
+    }
+    // A click on `row`, or a key moving to it: with Shift (`extend`) or
+    // Ctrl or Cmd (`toggle`) held.
+    function pick(row: int, extend: bool, toggle: bool) {
+        if row < 0 || row >= root.model.length { return; }
+        if root.selection-mode == SelectionMode.extended && extend {
+            sel.extend-to(row);
+        } else if root.selection-mode == SelectionMode.multiple || (root.selection-mode == SelectionMode.extended && toggle) {
+            sel.toggle(row);
+        } else {
+            sel.select(row);
+        }
+        root.set-current-item(row);
+    }
+    // Up and Down: the current row moves (selected, unless in `multiple`
+    // mode; Shift extends the selection).
+    function move-by(d: int, extend: bool) {
+        let k = root.shown-index(root.current-item);
+        let next = k < 0 ? 0 : k + d;
+        if next >= 0 && next < state.shown.length {
+            root.move-to(state.shown[next], extend);
+        }
+    }
+    function move-to(row: int, extend: bool) {
+        if root.selection-mode == SelectionMode.multiple {
+            root.set-current-item(row);
+        } else {
+            root.pick(row, extend, false);
+        }
+    }
+    // Where `row`'s arrow starts (deeper rows further right).
+    function start-of(row: int) -> length {
+        return 8px + root.model[row].level * root.indent;
+    }
+    function parent-of(row: int) -> int {
+        let level = root.model[row].level;
+        let i = row - 1;
+        while i >= 0 {
+            if root.model[i].level < level { return i; }
+            i -= 1;
+        }
+        return -1;
+    }
+
+    state := TreeState {
+        levels: root.model.map(item => item.level);
+        initially-expanded: root.initially-expanded;
+    }
+    // In `single` mode, the current row is the selection.
+    changed current-item => {
+        if root.selection-mode == SelectionMode.single { sel.select(root.current-item); }
+    }
+    sel := Selection {
+        count: root.model.length;
+        order: state.shown;
+        changed => { root.selection-changed(); }
+    }
+
+    VerticalLayout {
+        alignment: start;
+        for row[k] in state.shown : Rectangle {
+            height: root.row-height;
+            accessible-role: list-item;
+            accessible-label: root.model[row].text;
+            accessible-checked: sel.selected[row];
+            accessible-action-default => { root.pick(row, false, false); }
+            accessible-action-select => {
+                sel.select(row);
+                root.set-current-item(row);
+            }
+            accessible-action-set-selected(on) => { root.set-selected(row, on); }
+            background: sel.selected[row] ? Palette.selection-background
+                : row-touch.has-hover ? Palette.control-hover : #00000000;
+            // The arrow: right when collapsed, down when expanded.
+            Path {
+                x: root.start-of(row);
+                y: (parent.height - 10px) / 2;
+                width: 10px;
+                height: 10px;
+                visible: state.has-children[row];
+                commands: state.expanded[row] ? "M 1 3 L 5 7 L 9 3" : "M 3 1 L 7 5 L 3 9";
+                stroke: Palette.secondary-foreground;
+                stroke-width: 1.5px;
+            }
+            Text {
+                x: root.start-of(row) + 16px;
+                width: parent.width - self.x - 8px;
+                text: root.model[row].text;
+                overflow: elide;
+                font-size: Style.font-size;
+                vertical-alignment: center;
+                color: Palette.foreground;
+            }
+            row-touch := TouchArea {
+                clicked => {
+                    keys.focus();
+                    if state.has-children[row] && self.mouse-x < root.start-of(row) + 14px {
+                        state.toggle(row);
+                    } else {
+                        root.pick(row, self.modifiers.shift, self.modifiers.control || self.modifiers.meta);
+                    }
+                }
+            }
+        }
+    }
+    keys := FocusScope {
+        x: 0px;
+        y: 0px;
+        width: 0px;
+        height: 0px;
+        key-pressed(event) => {
+            let row = root.current-item;
+            if event.text == Key.DownArrow { root.move-by(1, event.modifiers.shift); return accept; }
+            if event.text == Key.UpArrow { root.move-by(-1, event.modifiers.shift); return accept; }
+            if (event.text == "a" || event.text == "A") && (event.modifiers.control || event.modifiers.meta) && root.selection-mode != SelectionMode.single {
+                sel.select-all();
+                return accept;
+            }
+            if row < 0 { return reject; }
+            if event.text == Key.RightArrow {
+                if state.has-children[row] {
+                    if state.expanded[row] { root.move-by(1, false); } else { state.expand(row); }
+                }
+                return accept;
+            }
+            if event.text == Key.LeftArrow {
+                if state.has-children[row] && state.expanded[row] {
+                    state.collapse(row);
+                } else if root.parent-of(row) >= 0 {
+                    root.move-to(root.parent-of(row), false);
+                }
+                return accept;
+            }
+            if event.text == Key.Space && root.selection-mode != SelectionMode.single {
+                sel.toggle(row);
+                return accept;
+            }
+            if event.text == Key.Space || event.text == Key.Return {
+                if state.has-children[row] { state.toggle(row); }
+                return accept;
+            }
+            return reject;
+        }
+    }
+}

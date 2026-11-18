@@ -1,0 +1,31 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// A split view, a range slider, a dial.
+import { RangeSlider, Dial, Palette } from "std-widgets.zge";
+
+export component Split inherits Window {
+    width: 300px;
+    height: 240px;
+    background: #ffffff;
+    var in-out <float> low: 20;
+    var in-out <float> high: 60;
+    var in-out <float> level: 50;
+
+    VerticalLayout {
+        split := SplitView {
+            height: 120px;
+            left := Rectangle { background: #fde68a; preferred-width: 100px; min-width: 40px; }
+            right := Rectangle { background: #bfdbfe; preferred-width: 200px; min-width: 60px; }
+        }
+        range := RangeSlider {
+            first-value <=> root.low;
+            second-value <=> root.high;
+        }
+        HorizontalLayout {
+            alignment: start;
+            dial := Dial { value <=> root.level; }
+            Text { text: "\{root.low}-\{root.high} \{root.level}"; vertical-alignment: center; }
+        }
+    }
+}

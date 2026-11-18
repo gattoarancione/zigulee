@@ -1,0 +1,138 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+import { Palette } from "palette.zge";
+import { Style } from "style.zge";
+
+// A wheel of choices, like the ones of a time picker. Drag or flick it,
+// turn the mouse wheel, click an item, or use the arrow keys (Home and End
+// jump to the ends): it settles on the item in the middle,
+// `current-index`.
+export component Tumbler inherits Empty {
+    var in <[string]> model;
+    var in-out <int> current-index;
+    var out <string> current-value: root.model.length > 0 ? root.model[max(0, min(root.model.length - 1, root.current-index))] : "";
+    // Items in view (best odd: the current one in the middle).
+    var in <int> visible-count: 5;
+    var in <bool> enabled: true;
+    var out <bool> has-focus: fs.has-focus;
+    // Called when the current item changes as the wheel turns.
+    callback changed(int);
+
+    var <length> row: Style.control-height;
+    // The item in the middle as the wheel turns (set before
+    // `current-index`, which then does not turn it again).
+    var <int> scrolled-index: -1;
+
+    // Turns to item `i` (clamped).
+    function select(i: int) {
+        if root.model.length > 0 {
+            flick.viewport-y = 0px - max(0, min(root.model.length - 1, i)) * root.row;
+        }
+    }
+
+    accessible-role: spinbox;
+    accessible-value: root.current-value;
+    accessible-enabled: root.enabled;
+    accessible-action-increment => { if root.enabled { root.select(root.current-index + 1); } }
+    accessible-action-decrement => { if root.enabled { root.select(root.current-index - 1); } }
+
+    min-width: 48px;
+    preferred-width: 80px;
+    min-height: root.row;
+    preferred-height: root.row * root.visible-count;
+
+    // The band the current item sits in.
+    Rectangle {
+        y: (parent.height - root.row) / 2;
+        width: parent.width;
+        height: root.row;
+        border-radius: Style.control-radius;
+        border-width: 1px;
+        border-color: Palette.border;
+        background: Palette.control-background;
+    }
+
+    flick := Flickable {
+        interactive: root.enabled;
+        snap-y: root.row;
+        viewport-width: parent.width;
+        viewport-height: root.row * (root.model.length + root.visible-count - 1);
+        // Where it starts (then turning and `select` move it).
+        viewport-y: 0px - root.current-index * root.row;
+        animate viewport-y { duration: 180ms; easing: ease-out; }
+
+        changed viewport-y => {
+            root.scrolled-index = max(0, min(root.model.length - 1, round((0px - self.viewport-y) / root.row)));
+            if root.scrolled-index != root.current-index {
+                root.current-index = root.scrolled-index;
+                root.changed(root.current-index);
+            }
+        }
+
+        for value[i] in root.model : Text {
+            y: (root.visible-count - 1) / 2 * root.row + i * root.row;
+            width: parent.width;
+            height: root.row;
+            text: value;
+            font-size: Style.font-size;
+            font-weight: i == root.current-index ? 600 : 400;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            color: !root.enabled ? Palette.disabled-foreground
+                : i == root.current-index ? Palette.foreground : Palette.secondary-foreground;
+            // Fading toward the edges, like a wheel turning away.
+            opacity: max(0.25, 1 - abs(i * root.row + flick.viewport-y) / (root.row * (root.visible-count + 1) / 2));
+
+            TouchArea {
+                enabled: root.enabled;
+                clicked => {
+                    fs.focus();
+                    root.select(i);
+                }
+            }
+        }
+    }
+
+    // Set from outside (not by turning): turn there.
+    changed current-index => {
+        if root.current-index != root.scrolled-index {
+            root.select(root.current-index);
+        }
+    }
+
+    // The focus ring.
+    Rectangle {
+        x: 0px - Style.focus-ring-offset;
+        y: (parent.height - root.row) / 2 - Style.focus-ring-offset;
+        width: parent.width + 2 * Style.focus-ring-offset;
+        height: root.row + 2 * Style.focus-ring-offset;
+        border-radius: Style.control-radius + Style.focus-ring-offset;
+        border-width: Style.focus-ring-width;
+        border-color: Palette.focus-ring;
+        visible: fs.has-focus;
+    }
+
+    fs := FocusScope {
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if event.text == Key.UpArrow {
+                root.select(root.current-index - 1);
+                return accept;
+            }
+            if event.text == Key.DownArrow {
+                root.select(root.current-index + 1);
+                return accept;
+            }
+            if event.text == Key.Home {
+                root.select(0);
+                return accept;
+            }
+            if event.text == Key.End {
+                root.select(root.model.length - 1);
+                return accept;
+            }
+            return reject;
+        }
+    }
+}

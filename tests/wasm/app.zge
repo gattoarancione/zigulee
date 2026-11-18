@@ -1,0 +1,81 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// The app tests/wasm/test.mjs runs in Node, through zigulee.js.
+import { Button, LineEdit } from "std-widgets.zge";
+
+export component App inherits Window {
+    width: 200px;
+    height: 100px;
+    background: #336699;
+    var in-out <int> clicks;
+    var in-out <string> typed <=> field.text;
+    var in-out <string> dropped;
+    var in-out <string> page-title;
+    var in-out <string> js;
+    var in-out <float> tilt;
+    var in-out <DeviceOrientation> way;
+    var in-out <float> lat;
+    var in-out <PositionError> why;
+    var in-out <string> picture-url;
+    var out <length> picture-width: picture.preferred-width;
+    var out <float> picture-progress: picture.progress;
+    var out <bool> picture-failed: picture.status == ImageStatus.error;
+
+    VerticalLayout {
+        padding: 8px;
+        spacing: 8px;
+        alignment: start;
+        Button {
+            text: "Click";
+            clicked => { clicks += 1; }
+        }
+        field := LineEdit {}
+    }
+    // A web view: an iframe over the canvas.
+    page := WebView {
+        x: 10px;
+        y: 60px;
+        width: 60px;
+        height: 30px;
+        html: "<title>T</title>";
+        finished => { root.page-title = page.title; }
+        javascript-finished(result) => { root.js = result; }
+    }
+    public function run-js() {
+        page.run-javascript("6 * 7");
+    }
+    // Motion sensors: the page's devicemotion events.
+    accel := Accelerometer {
+        active: true;
+        reading-changed => { root.tilt = accel.y; }
+    }
+    upright := OrientationSensor {
+        active: true;
+        reading-changed => { root.way = upright.orientation; }
+    }
+    // The position: the page's geolocation.
+    here := PositionSource {
+        active: true;
+        updated => { root.lat = here.latitude; }
+        changed error => { root.why = here.error; }
+    }
+    // An image from the network: the page's fetch.
+    picture := Image {
+        x: 0px;
+        y: 0px;
+        width: 2px;
+        height: 1px;
+        source-url: root.picture-url;
+        source-headers: ["X-Token: abc"];
+    }
+    // Text dropped from the page or the desktop.
+    DropArea {
+        x: 150px;
+        y: 75px;
+        width: 50px;
+        height: 25px;
+        accepts: "text";
+        dropped(data) => { root.dropped = data; }
+    }
+}

@@ -1,0 +1,101 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+import { Slider, Palette } from "std-widgets.zge";
+
+// Cards turned over in depth, and a panel tilted by sliders.
+
+// A card that turns over when clicked: its back shows past halfway.
+component Card inherits Rectangle {
+    var in <string> front;
+    var in <string> back;
+    var in <color> tint;
+    var <bool> flipped;
+    var <float> angle: flipped ? 180 : 0;
+    animate angle { duration: 500ms; easing: ease-in-out; }
+
+    width: 120px;
+    height: 160px;
+    border-radius: 12px;
+    background: angle < 90 ? tint : #334155;
+    rotation-y: angle;
+
+    Text {
+        visible: root.angle < 90;
+        text: root.front;
+        color: white;
+        font-size: 28px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    // Turned back too, so that it reads the right way round.
+    Text {
+        visible: root.angle >= 90;
+        rotation-y: 180;
+        text: root.back;
+        color: white;
+        font-size: 28px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    TouchArea {
+        clicked => { root.flipped = !root.flipped; }
+    }
+}
+
+export component Cards inherits Window {
+    preferred-width: 560px;
+    preferred-height: 520px;
+    background: Palette.background;
+    title: "Cards";
+    var in-out <float> tilt-x: 20;
+    var in-out <float> tilt-y: -30;
+    var in-out <float> distance: 600;
+
+    VerticalLayout {
+        padding: 24px;
+        spacing: 16px;
+
+        Text {
+            text: "Click a card to turn it over.";
+            color: Palette.foreground;
+        }
+        HorizontalLayout {
+            spacing: 24px;
+            height: 180px;
+            // Seen from 800 pixels away, over the row's middle.
+            perspective: 800px;
+            Card { front: "A"; back: "Ace"; tint: #2563eb; }
+            Card { front: "K"; back: "King"; tint: #16a34a; }
+            Card { front: "Q"; back: "Queen"; tint: #dc2626; }
+        }
+
+        stage := Rectangle {
+            height: 160px;
+            perspective: root.distance * 1px;
+            panel := Rectangle {
+                x: (parent.width - self.width) / 2;
+                width: 240px;
+                height: 140px;
+                border-radius: 10px;
+                background: #7c3aed;
+                rotation-x: root.tilt-x;
+                rotation-y: root.tilt-y;
+                Text {
+                    text: "Tilted panel";
+                    color: white;
+                    font-size: 22px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        Text { text: "rotation-x: \{round(root.tilt-x)}"; color: Palette.foreground; }
+        Slider { minimum: -80; maximum: 80; value <=> root.tilt-x; }
+        Text { text: "rotation-y: \{round(root.tilt-y)}"; color: Palette.foreground; }
+        Slider { minimum: -80; maximum: 80; value <=> root.tilt-y; }
+        Text { text: "perspective: \{round(root.distance)}px"; color: Palette.foreground; }
+        Slider { minimum: 200; maximum: 2000; value <=> root.distance; }
+    }
+}

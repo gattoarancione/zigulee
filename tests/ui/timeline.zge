@@ -1,0 +1,55 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// Animations started from code: sequences, pauses, parallel groups,
+// loops, springs.
+
+export component Timeline inherits Window {
+    width: 200px;
+    height: 120px;
+    background: #ffffff;
+    var out <int> ends;
+    var out <bool> busy: intro.running;
+
+    box := Rectangle {
+        x: 0px;
+        y: 0px;
+        width: 30px;
+        height: 30px;
+        background: #e11d48;
+    }
+    dot := Rectangle {
+        x: 150px;
+        y: 80px;
+        width: 20px;
+        height: 20px;
+        border-radius: 10px;
+        background: #2563eb;
+    }
+
+    intro := SequentialAnimation {
+        PropertyAnimation { target: box.x; to: 120px; duration: 300ms; easing: spring(0.4); }
+        PauseAnimation { duration: 100ms; }
+        ParallelAnimation {
+            PropertyAnimation { target: box.y; from: 0px; to: 60px; duration: 200ms; easing: ease-in-out; }
+            PropertyAnimation { target: box.background; to: #16a34a; duration: 300ms; }
+        }
+        finished => { root.ends += 1; }
+    }
+
+    // Runs by itself, forever.
+    pulse := PropertyAnimation {
+        target: dot.opacity;
+        from: 1;
+        to: 0.2;
+        duration: 400ms;
+        loops: -1;
+        running: true;
+    }
+
+    TouchArea {
+        clicked => {
+            if intro.running { intro.stop(); } else { intro.start(); }
+        }
+    }
+}

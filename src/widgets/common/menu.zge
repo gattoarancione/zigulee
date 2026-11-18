@@ -1,0 +1,359 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+import { Palette } from "palette.zge";
+import { Style } from "style.zge";
+
+// One entry of a menu: an action (with an optional shortcut shown on the
+// right, and a check mark), a separator line, or a submenu: the entries
+// right after one, a `level` deeper, are its submenu (as a TreeView's
+// rows: `{ text: "Export" }, { text: "PNG", level: 1 }, ...`).
+export struct MenuItem {
+    text: string,
+    // The keys that do the same ("Ctrl+S"): shown, and (in a menu bar)
+    // active with the menu closed.
+    shortcut: string,
+    disabled: bool,
+    checked: bool,
+    separator: bool,
+    level: int,
+}
+
+// A popup list of actions: a context menu (`open-at(x, y)`, from a
+// TouchArea's `right-clicked`), or the menu of a button or a menu bar.
+// Hover or the arrow keys highlight an item; a click, Return or Space
+// chooses it (`activated(index)`, its index in `items`) and closes the
+// menu; Escape or a click outside closes it. An entry with a submenu opens
+// it beside it (hovered, clicked, or with Right, Return or Space; Left
+// closes it), on the other side if there is no room. It stays in the
+// window.
+export component Menu inherits PopupWindow {
+    var in <[MenuItem]> items;
+    // The item chosen.
+    callback activated(int);
+
+    // Opens it at `x`, `y` in its parent (where a right click was, say).
+    public function open-at(x: length, y: length) {
+        root.x = x;
+        root.y = y;
+        root.open();
+    }
+    // Opens it where it is.
+    public function open() {
+        root.highlighted = -1;
+        root.open-item = -1;
+        root.show();
+        fs.focus();
+    }
+
+    var <int> highlighted: -1;
+    // The entry whose submenu is the deepest one open (-1: none).
+    var <int> open-item: -1;
+    // How many submenus are open.
+    var <int> depth: root.open-item < 0 ? 0 : root.items[root.open-item].level + 1;
+    var <length> menu-width: 220px;
+
+    // The entry `i`'s submenu is in (-1: the menu itself).
+    function parent-of(i: int) -> int {
+        let level = root.items[i].level;
+        let j = i - 1;
+        while j >= 0 {
+            if root.items[j].level < level { return j; }
+            j -= 1;
+        }
+        return -1;
+    }
+    function has-submenu(i: int) -> bool {
+        return i >= 0 && i + 1 < root.items.length && !root.items[i].separator
+            && root.items[i + 1].level > root.items[i].level;
+    }
+    // Whether entry `i` is in the menu of `owner` (-1: the menu itself).
+    function in-menu(i: int, owner: int) -> bool {
+        if owner < 0 { return root.items[i].level == 0; }
+        return i > owner && root.items[i].level == root.items[owner].level + 1 && root.parent-of(i) == owner;
+    }
+    // The owner of the menu shown at depth `k`: -1, then the open entries.
+    function owner-at(k: int) -> int {
+        if k <= 0 { return -1; }
+        let i = root.open-item;
+        while i >= 0 && root.items[i].level > k - 1 {
+            i = root.parent-of(i);
+        }
+        return i;
+    }
+    function row-height(i: int) -> length {
+        return root.items[i].separator ? 9px : 30px;
+    }
+    function menu-height(owner: int) -> length {
+        let h = 10px;
+        for entry[i] in root.items {
+            if root.in-menu(i, owner) { h += root.row-height(i); }
+        }
+        return h;
+    }
+    // Where entry `i` is in its menu.
+    function row-y(i: int) -> length {
+        let owner = root.parent-of(i);
+        let y = 5px;
+        let j = owner + 1;
+        while j < i {
+            if root.in-menu(j, owner) { y += root.row-height(j); }
+            j += 1;
+        }
+        return y;
+    }
+    // Where the menu at depth `k` is (the menu itself at 0, 0): beside its
+    // entry, on the right, else on the left; if neither fits, as far right
+    // as the window has room.
+    function menu-x(k: int) -> length {
+        if k <= 0 { return 0px; }
+        let outer = root.menu-x(k - 1);
+        let right = outer + root.menu-width - 4px;
+        if root.window-x + right + root.menu-width <= root.window-width { return right; }
+        let left = outer - root.menu-width + 4px;
+        if root.window-x + left >= 0px { return left; }
+        return root.window-width - root.window-x - root.menu-width;
+    }
+    function menu-y(k: int) -> length {
+        if k <= 0 { return 0px; }
+        let owner = root.owner-at(k);
+        let y = root.menu-y(k - 1) + root.row-y(owner) - 5px;
+        return max(0px - root.window-y, min(y, root.window-height - root.window-y - root.menu-height(owner)));
+    }
+
+    // The first entry from `i` (going by `step`) of the menu of `owner`
+    // that can be chosen, or -1.
+    function choosable(i: int, step: int, owner: int) -> int {
+        let j = i;
+        while j >= 0 && j < root.items.length {
+            if root.in-menu(j, owner) && !root.items[j].separator && !root.items[j].disabled { return j; }
+            j += step;
+        }
+        return -1;
+    }
+    // The menu the keys move in: the highlighted entry's, else the
+    // deepest one open.
+    function key-menu() -> int {
+        return root.highlighted >= 0 ? root.parent-of(root.highlighted) : root.open-item;
+    }
+    function enter(i: int) {
+        root.open-item = i;
+        root.highlighted = root.choosable(i + 1, 1, i);
+    }
+    function choose(i: int) {
+        if i < 0 || root.items[i].separator || root.items[i].disabled { return; }
+        if root.has-submenu(i) {
+            root.enter(i);
+            return;
+        }
+        root.close();
+        root.activated(i);
+    }
+
+    close-policy: close-on-click-outside;
+    fit-in-window: true;
+    width: root.menu-width;
+    height: root.menu-height(-1);
+
+    for k in root.depth + 1 : Rectangle {
+        x: root.menu-x(k);
+        y: root.menu-y(k);
+        width: root.menu-width;
+        height: root.menu-height(root.owner-at(k));
+        border-radius: Style.popup-radius;
+        border-width: 1px;
+        border-color: Palette.border;
+        background: Palette.alternate-background;
+
+        VerticalLayout {
+            x: 5px;
+            y: 5px;
+            width: parent.width - 10px;
+            alignment: start;
+            for entry[i] in root.items : Rectangle {
+                visible: root.in-menu(i, root.owner-at(k));
+                height: self.visible ? root.row-height(i) : 0px;
+                border-radius: Style.control-radius;
+                background: i == root.highlighted || i == root.open-item || item-touch.has-hover ? Palette.control-hover : #00000000;
+
+                Rectangle {
+                    visible: entry.separator;
+                    x: 6px;
+                    y: 4px;
+                    width: parent.width - 12px;
+                    height: 1px;
+                    background: Palette.border;
+                }
+                Path {
+                    visible: entry.checked && !entry.separator;
+                    x: 9px;
+                    y: (parent.height - 9px) / 2;
+                    width: 12px;
+                    height: 9px;
+                    commands: "M 0 4.5 L 4.5 9 L 12 0";
+                    stroke: entry.disabled ? Palette.disabled-foreground : Palette.foreground;
+                    stroke-width: 1.5px;
+                }
+                Text {
+                    visible: !entry.separator;
+                    x: 30px;
+                    width: parent.width - 40px - shortcut.preferred-width;
+                    height: parent.height;
+                    text: entry.text;
+                    overflow: elide;
+                    font-size: Style.font-size;
+                    vertical-alignment: center;
+                    color: entry.disabled ? Palette.disabled-foreground : Palette.foreground;
+                }
+                shortcut := Text {
+                    visible: !entry.separator && !root.has-submenu(i);
+                    x: parent.width - 10px - self.preferred-width;
+                    height: parent.height;
+                    text: entry.shortcut;
+                    font-size: Style.font-size - 1px;
+                    vertical-alignment: center;
+                    color: Palette.disabled-foreground;
+                }
+                // A submenu's arrow.
+                Path {
+                    visible: root.has-submenu(i);
+                    x: parent.width - 16px;
+                    y: (parent.height - 10px) / 2;
+                    width: 6px;
+                    height: 10px;
+                    commands: "M 0 0 L 6 5 L 0 10";
+                    stroke: entry.disabled ? Palette.disabled-foreground : Palette.secondary-foreground;
+                    stroke-width: 1.5px;
+                }
+                item-touch := TouchArea {
+                    enabled: !entry.separator && !entry.disabled;
+                    // The keys go on from the entry pointed at; its
+                    // submenu opens, and those of others close.
+                    changed has-hover => {
+                        if self.has-hover {
+                            root.highlighted = i;
+                            root.open-item = root.has-submenu(i) ? i : root.parent-of(i);
+                        } else if root.highlighted == i {
+                            root.highlighted = -1;
+                        }
+                    }
+                    clicked => { root.choose(i); }
+                }
+            }
+        }
+    }
+
+    fs := FocusScope {
+        key-pressed(event) => {
+            let menu = root.key-menu();
+            if event.text == Key.DownArrow {
+                let next = root.choosable(root.highlighted < 0 ? menu + 1 : root.highlighted + 1, 1, menu);
+                if next >= 0 { root.highlighted = next; }
+                return accept;
+            }
+            if event.text == Key.UpArrow {
+                let previous = root.highlighted < 0 ? root.choosable(root.items.length - 1, -1, menu)
+                    : root.choosable(root.highlighted - 1, -1, menu);
+                if previous >= 0 { root.highlighted = previous; }
+                return accept;
+            }
+            if event.text == Key.RightArrow {
+                if root.has-submenu(root.highlighted) && !root.items[root.highlighted].disabled { root.enter(root.highlighted); }
+                return accept;
+            }
+            if event.text == Key.LeftArrow {
+                if menu >= 0 {
+                    root.highlighted = menu;
+                    root.open-item = root.parent-of(menu);
+                }
+                return accept;
+            }
+            if event.text == Key.Return || event.text == Key.Space {
+                root.choose(root.highlighted);
+                return accept;
+            }
+            return reject;
+        }
+    }
+}
+
+// A row of menus at the top of a window: put MenuBarItem elements in it.
+// Where the platform has its own menu bar (macOS), the menus go there, and
+// this one takes no room in the window.
+export component MenuBar inherits Rectangle {
+    // The menus are in the platform's menu bar.
+    var out <bool> native: probe.native;
+
+    min-height: root.native ? 0px : 30px;
+    preferred-height: root.native ? 0px : 30px;
+    max-height: root.native ? 0px : 30px;
+    visible: !root.native;
+    background: Palette.alternate-background;
+
+    // Without a title: only asks whether the menu bar is the platform's.
+    probe := PlatformMenu {}
+    accessible-role: group;
+
+    HorizontalLayout {
+        padding-left: 4px;
+        alignment: start;
+        @children
+    }
+    Rectangle {
+        y: parent.height - 1px;
+        height: 1px;
+        background: Palette.border;
+    }
+}
+
+// A menu of a MenuBar: its title (`text`), and the menu that opens under it.
+export component MenuBarItem inherits Rectangle {
+    var in <string> text;
+    var in <[MenuItem]> items;
+    callback activated(int);
+
+    min-width: label.preferred-width + 20px;
+    preferred-width: label.preferred-width + 20px;
+    border-radius: Style.control-radius;
+    background: menu.is-open || touch.pressed ? Palette.control-pressed
+        : touch.has-hover ? Palette.control-hover : #00000000;
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-action-default => { menu.open-at(0px, root.height); }
+
+    label := Text {
+        x: 10px;
+        height: parent.height;
+        text: root.text;
+        font-size: Style.font-size;
+        vertical-alignment: center;
+        color: Palette.foreground;
+    }
+    touch := TouchArea {
+        clicked => { menu.open-at(0px, root.height); }
+    }
+    menu := Menu {
+        items: root.items;
+        activated(i) => { root.activated(i); }
+    }
+    // Its items' shortcuts, with the menu closed (the platform's menu bar
+    // has them itself).
+    for entry[i] in root.items : Shortcut {
+        sequence: entry.shortcut;
+        enabled: !entry.disabled && !entry.separator && !platform.native;
+        activated => { root.activated(i); }
+    }
+    // The same menu in the platform's menu bar (macOS).
+    platform := PlatformMenu {
+        text: root.text;
+        for entry[i] in root.items : PlatformMenuItem {
+            text: entry.text;
+            shortcut: entry.shortcut;
+            checked: entry.checked;
+            enabled: !entry.disabled;
+            separator: entry.separator;
+            level: entry.level;
+            activated => { root.activated(i); }
+        }
+    }
+}

@@ -1,0 +1,48 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// Clipping: a turned element clips to its turned rectangle; a clip path
+// cuts an element and its children to a pie slice whose angle follows a
+// value (a gauge), built with sin and cos.
+
+export component Clip inherits Window {
+    width: 300px;
+    height: 100px;
+    background: #ffffff;
+    // How much of the dial shows, from 12 o'clock clockwise (below a
+    // whole turn).
+    var in-out <float> value: 0.25;
+    var in-out <float> turn: 45;
+    // The slice, in the 80 px dial's coordinates.
+    var out <string> slice: "M 40 40 L 40 0 A 40 40 0 " + (root.value > 0.5 ? "1" : "0") + " 1 "
+        + (40 + 40 * sin(root.value * 360)) + " " + (40 - 40 * cos(root.value * 360)) + " Z";
+
+    dial := Rectangle {
+        x: 10px;
+        y: 10px;
+        width: 80px;
+        height: 80px;
+        background: #16a34a;
+        clip-path: root.slice;
+        // Children are cut too.
+        Rectangle { x: 60px; width: 20px; height: 80px; background: #dc2626; }
+    }
+    picture := Image {
+        x: 210px;
+        y: 10px;
+        width: 80px;
+        height: 80px;
+        source: @image-url("checker.png");
+        image-fit: fill;
+        clip-path: root.slice;
+    }
+    turned := Rectangle {
+        x: 120px;
+        y: 20px;
+        width: 60px;
+        height: 60px;
+        rotation: root.turn;
+        clip: true;
+        Rectangle { x: -20px; y: -20px; width: 100px; height: 100px; background: #dc2626; }
+    }
+}

@@ -1,0 +1,25 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// A tree view.
+import { TreeView, TreeItem } from "std-widgets.zge";
+
+export component Tree inherits Window {
+    width: 240px;
+    height: 260px;
+    background: #ffffff;
+    var in-out <int> current: -1;
+    var out <int> changes;
+    tree := TreeView {
+        current-item <=> root.current;
+        current-item-changed(row) => { root.changes += 1; }
+        model: [
+            { text: "Fruit", level: 0 },
+            { text: "Apple", level: 1 },
+            { text: "Pear", level: 1 },
+            { text: "Pear seed", level: 2 },
+            { text: "Vegetables", level: 0 },
+            { text: "Leek", level: 1 },
+        ];
+    }
+}

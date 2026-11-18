@@ -1,0 +1,39 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+import { Button, CheckBox, Switch, Slider, ProgressIndicator, LineEdit, TextEdit, Palette } from "std-widgets.zge";
+
+// A user component with the same name as a hidden std one is fine.
+component Internal inherits Rectangle {}
+
+export component Widgets inherits Window {
+    width: 300px;
+    height: 360px;
+    var in-out <int> clicks;
+    var in-out <bool> dark <=> Palette.dark;
+    var in-out <float> volume <=> slider.value;
+    var in-out <bool> agree <=> check.checked;
+    var in-out <int> changes;
+    var in-out <string> submitted;
+    var in-out <string> name-text <=> name.text;
+    var out <string> notes-text: notes.text;
+    background: Palette.background;
+
+    VerticalLayout {
+        padding: 10px;
+        spacing: 8px;
+        alignment: start;
+        button := Button { text: "Click"; clicked => { clicks += 1; } }
+        check := CheckBox { text: "I agree"; }
+        toggle := Switch { text: "Dark"; checked <=> root.dark; }
+        slider := Slider { maximum: 10; changed(v) => { changes += 1; } }
+        ProgressIndicator { progress: slider.value / 10; }
+        disabled := Button { text: "Disabled"; enabled: false; clicked => { clicks += 100; } }
+        name := LineEdit {
+            placeholder-text: "Your name";
+            accepted(t) => { submitted = t; }
+        }
+        notes := TextEdit { height: 70px; text: "First line"; }
+    }
+}
+

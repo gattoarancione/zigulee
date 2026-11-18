@@ -1,0 +1,59 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// Anchors: edges tied to the parent's or a sibling's, with margins; filling
+// and centering; following what they are anchored to.
+
+import { Button } from "std-widgets.zge";
+
+export component Anchors inherits Window {
+    width: 300px;
+    height: 200px;
+    var in-out <length> gap: 10px;
+    var out <string> side-at: "\{side.x / 1px} \{side.y / 1px} \{side.width / 1px} \{side.height / 1px}";
+    var out <string> inner-at: "\{inner.x / 1px} \{inner.y / 1px} \{inner.width / 1px} \{inner.height / 1px}";
+    var out <string> next-at: "\{next.x / 1px} \{next.y / 1px} \{next.width / 1px} \{next.height / 1px}";
+    var out <string> corner-at: "\{corner.x / 1px} \{corner.y / 1px}";
+    // A text held by its center takes its own size, not its parent's.
+    var out <bool> label-centered: label.width > 10px && label.width < 100px && label.height < 50px
+        && abs(label.x + label.width / 2 - root.width / 2) < 0.01px && abs(label.y + label.height / 2 - root.height / 2) < 0.01px;
+    // A widget in the corner, at its own size.
+    var out <bool> ok-placed: ok.width > 20px && ok.width < 150px && ok.x + ok.width == root.width - 10px
+        && ok.y + ok.height == root.height - 10px;
+    var out <string> middle-at: "\{middle.x / 1px} \{middle.y / 1px}";
+    side := Rectangle {
+        width: 50px;
+        anchors.top: parent.top;
+        anchors.bottom: parent.bottom;
+        anchors.left: parent.left;
+        anchors.margins: root.gap;
+        anchors.bottom-margin: 20px;
+        inner := Rectangle { anchors.fill: parent; anchors.margins: 5px; }
+    }
+    next := Rectangle {
+        anchors.left: side.right;
+        anchors.left-margin: 4px;
+        anchors.right: parent.right;
+        anchors.top: side.top;
+        height: 30px;
+    }
+    corner := Rectangle {
+        width: 20px;
+        height: 10px;
+        anchors.right: parent.right;
+        anchors.bottom: parent.bottom;
+    }
+    middle := Rectangle {
+        width: 40px;
+        height: 20px;
+        anchors.center-in: parent;
+        anchors.vertical-center-offset: -10px;
+    }
+    label := Text { text: "Centered"; anchors.center-in: parent; }
+    ok := Button {
+        text: "OK";
+        anchors.right: parent.right;
+        anchors.bottom: parent.bottom;
+        anchors.margins: 10px;
+    }
+}

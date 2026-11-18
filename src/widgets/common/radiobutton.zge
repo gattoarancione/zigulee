@@ -1,0 +1,154 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+import { Palette } from "palette.zge";
+import { Style } from "style.zge";
+
+// A radio button: one choice of several. A click (or Space, with keyboard
+// focus) checks it; checking another one of the group is its owner's job
+// (bind `checked`, or use a ButtonGroup). `toggled` comes first: when the
+// owner's handler makes a binding of `checked` true, the binding stays (so
+// the button unchecks when another is chosen); only otherwise is `checked`
+// set.
+export component RadioButton inherits Empty {
+    var in <string> text;
+    var in <bool> enabled: true;
+    var in-out <bool> checked;
+    var out <bool> has-focus: fs.has-focus;
+    var out <bool> has-hover: touch.has-hover;
+    // Chosen by the user (not when `checked` is set), before it is checked.
+    callback toggled();
+
+    accessible-role: radio-button;
+    accessible-label: root.text;
+    accessible-checkable: true;
+    accessible-checked: root.checked;
+    accessible-enabled: root.enabled;
+    accessible-action-default => { root.choose(); }
+    function choose() {
+        if root.enabled && !root.checked {
+            root.toggled();
+            if !root.checked { root.checked = true; }
+        }
+    }
+
+    min-height: Style.control-height;
+    min-width: Style.check-size + (text == "" ? 0px : 8px + label.preferred-width);
+    preferred-height: Style.control-height;
+    max-height: Style.control-height;
+    preferred-width: Style.check-size + (text == "" ? 0px : 8px + label.preferred-width);
+
+    circle := Rectangle {
+        x: 0px;
+        y: (parent.height - Style.check-size) / 2;
+        width: Style.check-size;
+        height: Style.check-size;
+        border-radius: Style.check-size / 2;
+        border-width: root.checked ? 0px : Style.check-border-width;
+        border-color: root.enabled ? Palette.strong-border : Palette.disabled-foreground;
+        background: !root.enabled ? (root.checked ? Palette.disabled-foreground : Palette.control-disabled)
+            : root.checked ? (touch.pressed ? Palette.accent-pressed : touch.has-hover ? Palette.accent-hover : Palette.accent-background)
+            : touch.pressed ? Palette.control-pressed : touch.has-hover ? Palette.control-hover : Palette.control-background;
+        animate background { duration: 80ms; }
+        drop-shadow-offset-y: Style.control-shadow-y;
+        drop-shadow-blur: Style.control-shadow-blur;
+        drop-shadow-color: root.enabled ? Palette.control-shadow : #00000000;
+
+        dot := Rectangle {
+            width: root.checked ? Style.check-size / 2.5 : 0px;
+            height: self.width;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            border-radius: self.width / 2;
+            background: Palette.accent-foreground;
+            animate width { duration: 100ms; easing: ease-out; }
+        }
+        Rectangle {
+            x: 0px - Style.focus-ring-offset;
+            y: 0px - Style.focus-ring-offset;
+            width: parent.width + 2 * Style.focus-ring-offset;
+            height: parent.height + 2 * Style.focus-ring-offset;
+            border-radius: parent.width / 2 + Style.focus-ring-offset;
+            border-width: Style.focus-ring-width;
+            border-color: Palette.focus-ring;
+            visible: fs.has-focus;
+        }
+    }
+    label := Text {
+        x: Style.check-size + 8px;
+        width: parent.width - Style.check-size - 8px;
+        text: root.text;
+        font-size: Style.font-size;
+        vertical-alignment: center;
+        color: root.enabled ? Palette.foreground : Palette.disabled-foreground;
+    }
+    fs := FocusScope {
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if event.text == Key.Space {
+                root.choose();
+                return accept;
+            }
+            return reject;
+        }
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.choose(); }
+    }
+}
+
+// Radio buttons for the strings of `model`, one checked: `current-index`
+// (-1: none). Choosing one (a click, or `choose(index)`) calls
+// `selected(index)`. Up and Down (or Left and Right) choose the previous
+// or next one, from any of its buttons. One above the other, or side by
+// side (`horizontal`).
+export component ButtonGroup inherits FocusScope {
+    var in <[string]> model;
+    var in-out <int> current-index: -1;
+    var in <bool> horizontal;
+    callback selected(int);
+
+    accessible-role: group;
+
+    public function choose(i: int) {
+        if root.enabled && i >= 0 && i < root.model.length && i != root.current-index {
+            root.current-index = i;
+            root.selected(i);
+        }
+    }
+
+    key-pressed(event) => {
+        if event.text == Key.DownArrow || event.text == Key.RightArrow {
+            root.choose(min(root.current-index + 1, root.model.length - 1));
+            return accept;
+        }
+        if event.text == Key.UpArrow || event.text == Key.LeftArrow {
+            root.choose(max(root.current-index - 1, 0));
+            return accept;
+        }
+        return reject;
+    }
+
+    VerticalLayout {
+        if !root.horizontal : VerticalLayout {
+            spacing: 2px;
+            for text[i] in root.model : RadioButton {
+                text: text;
+                enabled: root.enabled;
+                checked: i == root.current-index;
+                toggled => { root.choose(i); }
+            }
+        }
+        if root.horizontal : HorizontalLayout {
+            spacing: 16px;
+            alignment: start;
+            for text[i] in root.model : RadioButton {
+                text: text;
+                enabled: root.enabled;
+                checked: i == root.current-index;
+                toggled => { root.choose(i); }
+            }
+        }
+    }
+}

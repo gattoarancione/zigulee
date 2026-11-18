@@ -1,0 +1,56 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// Drag and drop within the application.
+
+export component Dnd inherits Window {
+    width: 200px;
+    height: 150px;
+    background: #ffffff;
+    var out <string> in-bin;
+    var out <int> drops;
+    var out <bool> last-dropped;
+
+    bin := DropArea {
+        x: 130px;
+        y: 5px;
+        width: 60px;
+        height: 55px;
+        accepts: "card";
+        dropped(data) => {
+            root.in-bin = data;
+            root.drops += 1;
+        }
+        Rectangle {
+            background: bin.contains-drag ? #bbf7d0 : #e2e8f0;
+            Text { text: root.in-bin; }
+        }
+    }
+
+    // Takes files only: a card is not dropped here.
+    DropArea {
+        x: 10px;
+        y: 5px;
+        width: 60px;
+        height: 55px;
+        accepts: "file";
+        Rectangle { background: #fee2e2; }
+    }
+
+    card := DragArea {
+        x: 80px;
+        y: 90px;
+        width: 40px;
+        height: 30px;
+        kind: "card";
+        data: "ace";
+        finished(ok) => { root.last-dropped = ok; }
+        Rectangle {
+            // Follows the pointer while dragged.
+            x: card.offset-x;
+            y: card.offset-y;
+            border-radius: 4px;
+            background: card.dragging ? #2563eb : #1e3a8a;
+        }
+    }
+}

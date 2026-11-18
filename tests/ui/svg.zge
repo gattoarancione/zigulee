@@ -1,0 +1,23 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// SVG images: drawn at any size, fitted, colorized.
+export component Svg inherits Window {
+    width: 360px;
+    height: 160px;
+    background: #ffffff;
+    var out <length> natural: icon.preferred-width;
+
+    HorizontalLayout {
+        padding: 10px;
+        spacing: 10px;
+        icon := Image { source: @image-url("badge.svg"); }
+        Image { source: @image-url("badge.svg"); width: 96px; }
+        Image { source: @image-url("badge.svg"); width: 60px; image-fit: fill; }
+        Image { source: @image-url("badge.svg"); width: 40px; image-fit: cover; }
+        Image { source: @image-url("badge.svg"); width: 40px; colorize: #16a34a; }
+    }
+    // Repeated: the drawing, then a PNG (across, stretched down).
+    Image { x: 10px; y: 124px; width: 200px; height: 32px; source: @image-url("badge.svg"); image-fit: tile; }
+    Image { x: 220px; y: 124px; width: 61px; height: 32px; source: @image-url("checker.png"); image-fit: tile-horizontally; image-rendering: pixelated; }
+}

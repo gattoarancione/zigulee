@@ -1,0 +1,88 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// A small app written in .zge: `zig build run-hello`.
+// Compiled to Zig at build time by zgec.
+
+component Button inherits Rectangle {
+    var in <string> text;
+    callback clicked();
+
+    height: 40px;
+    border-radius: 8px;
+    background: touch.pressed ? #3730a3 : touch.has-hover ? #4f46e5 : #6366f1;
+    animate background { duration: 120ms; easing: ease-out; }
+
+    Text {
+        text: root.text;
+        color: white;
+        font-size: 15px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+export component Hello inherits Window {
+    width: 360px;
+    height: 260px;
+    title: "Hello from .zge";
+    background: #f8fafc;
+
+    var in-out <int> count: 0;
+
+    VerticalLayout {
+        padding: 24px;
+        spacing: 14px;
+
+        Text {
+            text: "Hello, zigulee!";
+            font-size: 28px;
+            color: #0f172a;
+        }
+        Text {
+            text: count == 0 ? "Press a button" : "Count: \{count}";
+            font-size: 16px;
+            color: count < 0 ? #dc2626 : #475569;
+        }
+        HorizontalLayout {
+            spacing: 12px;
+            Button {
+                text: "−1";
+                clicked => { count -= 1; }
+            }
+            Button {
+                text: "+1";
+                clicked => { count += 1; }
+            }
+            Button {
+                text: "Reset";
+                clicked => { count = 0; }
+            }
+        }
+        // One dot per click, up to 16.
+        HorizontalLayout {
+            height: 14px;
+            spacing: 6px;
+            alignment: start;
+            for i in min(count, 16) : Rectangle {
+                width: 14px;
+                border-radius: 7px;
+                background: i < 10 ? #a5b4fc : #f59e0b;
+            }
+        }
+        if count >= 10 : Text {
+            text: "Double digits!";
+            font-size: 14px;
+            color: #b45309;
+        }
+        Rectangle {}
+        Text {
+            text: "Edit examples/hello.zge and run again";
+            font-size: 12px;
+            color: #94a3b8;
+        }
+    }
+}

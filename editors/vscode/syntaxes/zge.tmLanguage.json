@@ -1,0 +1,116 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "zge",
+  "scopeName": "source.zge",
+  "patterns": [{ "include": "#comments" }, { "include": "#declarations" }, { "include": "#members" }, { "include": "#expressions" }],
+  "repository": {
+    "comments": {
+      "patterns": [
+        { "name": "comment.line.double-slash.zge", "match": "//.*$" },
+        { "name": "comment.block.zge", "begin": "/\\*", "end": "\\*/" }
+      ]
+    },
+    "declarations": {
+      "patterns": [
+        {
+          "match": "\\b(export\\s+)?(component|global)\\s+([A-Za-z_][\\w-]*)(\\s+(inherits)\\s+([A-Za-z_][\\w-]*))?",
+          "captures": {
+            "1": { "name": "storage.modifier.zge" },
+            "2": { "name": "keyword.declaration.zge" },
+            "3": { "name": "entity.name.type.class.zge" },
+            "5": { "name": "keyword.other.zge" },
+            "6": { "name": "entity.other.inherited-class.zge" }
+          }
+        },
+        {
+          "match": "\\b(export\\s+)?(struct|enum)\\s+([A-Za-z_][\\w-]*)",
+          "captures": {
+            "1": { "name": "storage.modifier.zge" },
+            "2": { "name": "keyword.declaration.zge" },
+            "3": { "name": "entity.name.type.zge" }
+          }
+        },
+        { "match": "\\b(import|export|from)\\b", "name": "keyword.control.import.zge" }
+      ]
+    },
+    "members": {
+      "patterns": [
+        {
+          "match": "\\b(var)\\s+((?:in-out|in|out|private)\\s+)?(?:(<)\\s*(\\[?[\\w-]+\\]?)\\s*(>)\\s*)?([A-Za-z_][\\w-]*)",
+          "captures": {
+            "1": { "name": "keyword.declaration.zge" },
+            "2": { "name": "storage.modifier.zge" },
+            "4": { "name": "entity.name.type.zge" },
+            "6": { "name": "variable.other.property.zge" }
+          }
+        },
+        {
+          "match": "\\b(callback)\\s+([A-Za-z_][\\w-]*)",
+          "captures": {
+            "1": { "name": "keyword.declaration.zge" },
+            "2": { "name": "entity.name.function.zge" }
+          }
+        },
+        {
+          "comment": "id := Element",
+          "match": "\\b([a-z_][\\w-]*)\\s*(:=)\\s*([A-Z][\\w-]*)",
+          "captures": {
+            "1": { "name": "variable.other.constant.zge" },
+            "2": { "name": "keyword.operator.zge" },
+            "3": { "name": "entity.name.type.zge" }
+          }
+        },
+        {
+          "comment": "handler => { }",
+          "match": "\\b([a-z_][\\w-]*)\\s*(\\([^)]*\\))?\\s*(=>)",
+          "captures": {
+            "1": { "name": "entity.name.function.zge" },
+            "3": { "name": "keyword.operator.zge" }
+          }
+        },
+        {
+          "comment": "binding name:",
+          "match": "\\b([a-z_][\\w-]*)\\s*(?=:(?!=))",
+          "name": "variable.other.property.zge"
+        },
+        {
+          "match": "\\b(animate|states|when|for|in|if|else|return|changed)\\b",
+          "name": "keyword.control.zge"
+        },
+        {
+          "comment": "Element types: capitalized names before {",
+          "match": "\\b([A-Z][\\w-]*)\\s*(?=\\{)",
+          "name": "entity.name.type.zge"
+        }
+      ]
+    },
+    "expressions": {
+      "patterns": [
+        { "include": "#strings" },
+        { "match": "#[0-9a-fA-F]{3,8}\\b", "name": "constant.other.color.zge" },
+        { "match": "\\b\\d+(\\.\\d+)?(px|phx|ms|s|%|deg)?\\b", "name": "constant.numeric.zge" },
+        { "match": "\\b(true|false)\\b", "name": "constant.language.zge" },
+        { "match": "\\b(root|self|parent)\\b", "name": "variable.language.zge" },
+        { "match": "@image-url|@audio-url|@video-url|@model-url|@linear-gradient|@radial-gradient|@tr\\b", "name": "support.function.zge" },
+        { "match": "\\b(min|max|abs|round|floor|ceil|sqrt|mod|debug)(?=\\()", "name": "support.function.zge" },
+        { "match": "<=>|:=|=>|->|==|!=|<=|>=|&&|\\|\\||[-+*/]=?|[<>!?=]", "name": "keyword.operator.zge" }
+      ]
+    },
+    "strings": {
+      "name": "string.quoted.double.zge",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "meta.interpolation.zge",
+          "begin": "\\\\\\{",
+          "end": "\\}",
+          "beginCaptures": { "0": { "name": "punctuation.section.interpolation.begin.zge" } },
+          "endCaptures": { "0": { "name": "punctuation.section.interpolation.end.zge" } },
+          "patterns": [{ "include": "#expressions" }]
+        },
+        { "name": "constant.character.escape.zge", "match": "\\\\." }
+      ]
+    }
+  }
+}

@@ -1,0 +1,36 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// Settings: a component inheriting `Settings` keeps its properties, and
+// one inheriting that the ones it adds; a property linked to one takes
+// its saved value. StandardPaths: where the documents are.
+export component ViewSettings inherits Settings {
+    category: "view";
+    var in-out <int> count: 3;
+    var in-out <string> name: "plain";
+    var in-out <length> size: 10px;
+    var in-out <color> tint: #336699;
+}
+
+component MoreSettings inherits ViewSettings {
+    var in-out <bool> dark;
+}
+
+export component SettingsApp inherits Window {
+    width: 100px;
+    height: 50px;
+    var in <string> file;
+    var in-out <int> clicks;
+    var out <string> documents: paths.documents;
+    paths := StandardPaths {}
+    store := MoreSettings {
+        file: root.file;
+        count <=> root.clicks;
+    }
+    TouchArea {
+        clicked => {
+            root.clicks += 1;
+            store.dark = !store.dark;
+        }
+    }
+}

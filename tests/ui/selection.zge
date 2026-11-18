@@ -1,0 +1,71 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// Several items selected: a list (as on desktops), a table (each click
+// adding or removing a row), a tree, and a grid of cells of its own.
+import { StandardListView, StandardTableView, TreeView, GridView } from "std-widgets.zge";
+
+export component Selections inherits Window {
+    width: 400px;
+    height: 400px;
+    background: #ffffff;
+    var out <int> list-changes;
+    var out <int> list-count: list.selected-items.length;
+    var out <int> table-count: table.selected-rows.length;
+    var out <int> tree-count: tree.selected-items.length;
+    var out <int> grid-count: picked.selected-rows.length;
+
+    // Rows of 34 px, from y 0.
+    list := StandardListView {
+        x: 0px;
+        y: 0px;
+        width: 200px;
+        height: 200px;
+        selection-mode: extended;
+        model: ["Ada", "Grace", "Linus", "Alan", "Barbara"];
+        selection-changed => { root.list-changes += 1; }
+    }
+    // A header of 34 px, then rows of 32.
+    table := StandardTableView {
+        x: 200px;
+        y: 0px;
+        width: 200px;
+        height: 200px;
+        selection-mode: multiple;
+        columns: ["Name"];
+        rows: [["Ada"], ["Grace"], ["Linus"]];
+    }
+    // Rows of 30 px, from y 200.
+    tree := TreeView {
+        x: 0px;
+        y: 200px;
+        width: 200px;
+        height: 200px;
+        selection-mode: extended;
+        model: [
+            { text: "Fruit", level: 0 },
+            { text: "Apple", level: 1 },
+            { text: "Pear", level: 1 },
+            { text: "Vegetables", level: 0 },
+            { text: "Leek", level: 1 },
+        ];
+    }
+    // Cells of 36 px, 8 px apart, from (208, 208).
+    picked := Selection { count: 4; }
+    GridView {
+        x: 200px;
+        y: 200px;
+        width: 200px;
+        height: 200px;
+        for n[i] in 4 : Rectangle {
+            width: 36px;
+            height: 36px;
+            background: picked.selected[i] ? #3366cc : #dddddd;
+            TouchArea {
+                clicked => {
+                    if self.modifiers.shift { picked.extend-to(i); } else { picked.toggle(i); }
+                }
+            }
+        }
+    }
+}

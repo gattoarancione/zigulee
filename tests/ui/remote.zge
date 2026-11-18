@@ -1,0 +1,21 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// Images loaded while the program runs, in the background; a second one
+// of the same URL shares the first's.
+export component Remote inherits Window {
+    width: 200px;
+    height: 100px;
+    var in-out <string> url: "tests/ui/checker.png";
+    var out <ImageStatus> state: photo.status;
+    var out <bool> shown: photo.status == ImageStatus.ready;
+    var out <length> natural: photo.preferred-width;
+    var out <float> progress: photo.progress;
+    var in-out <bool> twice;
+
+    HorizontalLayout {
+        photo := Image { source-url: root.url; source-headers: ["Accept: image/*"]; }
+        copy := Image { source-url: root.twice ? root.url : ""; source-headers: ["Accept: image/*"]; }
+        Text { text: root.shown ? "loaded" : photo.status == ImageStatus.error ? "failed" : "loading"; }
+    }
+}

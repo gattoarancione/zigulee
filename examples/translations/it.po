@@ -1,0 +1,39 @@
+# Italian translation of the todo example.
+# Made from the template: zgec tr examples/todo.zge -o todo.pot
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Language: it\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+#: examples/todo.zge:13
+msgid "Todo"
+msgstr "Cose da fare"
+
+#: examples/todo.zge:34
+msgid "What needs doing?"
+msgstr "Cosa c'è da fare?"
+
+#: examples/todo.zge:42
+msgid "Add"
+msgstr "Aggiungi"
+
+#: examples/todo.zge:67
+msgid "Remove"
+msgstr "Rimuovi"
+
+#: examples/todo.zge:77
+msgid "Nothing to do"
+msgstr "Niente da fare"
+
+#: examples/todo.zge:77
+msgid "{} of {} left"
+msgstr "{} su {} da fare"
+
+#: examples/todo.zge:81
+msgid "Dark"
+msgstr "Scuro"
+
+#: examples/todo.zge:84
+msgid "Clear done"
+msgstr "Togli i fatti"

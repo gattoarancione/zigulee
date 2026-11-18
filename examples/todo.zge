@@ -1,0 +1,93 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// A todo list: the UI is here, the list itself is a model owned by Zig
+// (todo_list.zig), which the callbacks update. Its texts are translated
+// (translations/it.po; `zig build run-todo -- --lang it`).
+
+import { Button, CheckBox, LineEdit, ListView, Palette } from "std-widgets.zge";
+
+struct TodoItem {
+    title: string,
+    done: bool,
+}
+
+export component TodoApp inherits Window {
+    title: @tr("Todo");
+    width: 400px;
+    height: 480px;
+    background: Palette.background;
+
+    var in <[TodoItem]> items;
+    var in <int> remaining;
+    var in-out <bool> dark <=> Palette.dark;
+
+    callback add(string);
+    callback toggle(int, bool);
+    callback remove(int);
+    callback clear-done();
+
+    VerticalLayout {
+        padding: 16px;
+        spacing: 8px;
+
+        HorizontalLayout {
+            spacing: 8px;
+            input := LineEdit {
+                placeholder-text: @tr("What needs doing?");
+                accepted(text) => {
+                    root.add(text);
+                    self.text = "";
+                }
+            }
+            Button {
+                horizontal-stretch: 0;
+                text: @tr("Add");
+                primary: true;
+                enabled: input.text != "";
+                clicked => {
+                    root.add(input.text);
+                    input.text = "";
+                }
+            }
+        }
+
+        list := ListView {
+            vertical-stretch: 1;
+            for item[i] in root.items : HorizontalLayout {
+                height: 44px;
+                padding: 4px;
+                padding-left: 8px;
+                spacing: 8px;
+                CheckBox {
+                    horizontal-stretch: 1;
+                    text: item.title;
+                    checked: item.done;
+                    toggled => { root.toggle(i, self.checked); }
+                }
+                Button {
+                    horizontal-stretch: 0;
+                    text: @tr("Remove");
+                    clicked => { root.remove(i); }
+                }
+            }
+        }
+
+        HorizontalLayout {
+            spacing: 8px;
+            Text {
+                horizontal-stretch: 1;
+                text: root.items.length == 0 ? @tr("Nothing to do") : @tr("{} of {} left", root.remaining, root.items.length);
+                color: Palette.secondary-foreground;
+                vertical-alignment: center;
+            }
+            CheckBox { text: @tr("Dark"); checked <=> root.dark; }
+            clear := Button {
+                horizontal-stretch: 0;
+                text: @tr("Clear done");
+                enabled: root.remaining < root.items.length;
+                clicked => { root.clear-done(); }
+            }
+        }
+    }
+}

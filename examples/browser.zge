@@ -1,0 +1,61 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+import { Button, LineEdit, Palette } from "std-widgets.zge";
+
+// A small browser: an address bar, back, forward and reload, and the page.
+export component Browser inherits Window {
+    preferred-width: 900px;
+    preferred-height: 640px;
+    background: Palette.background;
+    title: "Browser";
+    var in-out <string> address: "https://ziglang.org";
+
+    VerticalLayout {
+        HorizontalLayout {
+            padding: 8px;
+            spacing: 6px;
+            Button {
+                text: "‹";
+                enabled: page.can-go-back;
+                clicked => { page.back(); }
+            }
+            Button {
+                text: "›";
+                enabled: page.can-go-forward;
+                clicked => { page.forward(); }
+            }
+            Button {
+                text: page.loading ? "✕" : "↻";
+                clicked => {
+                    if page.loading {
+                        page.stop();
+                    } else {
+                        page.reload();
+                    }
+                }
+            }
+            LineEdit {
+                text: page.url;
+                accepted(text) => { page.url = text; }
+            }
+        }
+        Rectangle {
+            page := WebView {
+                width: 100%;
+                height: 100%;
+                url: root.address;
+            }
+            Text {
+                visible: !page.available;
+                text: "No web views on this platform.";
+                color: Palette.foreground;
+            }
+            Text {
+                visible: page.error != "";
+                text: page.error;
+                color: #c03030;
+            }
+        }
+    }
+}

@@ -1,0 +1,25 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// An HTTP request: a POST with a header and a body, its JSON answer read
+// by path; JSON in a string read the same way.
+export component HttpApp inherits Window {
+    width: 200px;
+    height: 100px;
+    var in <string> base;
+    var in-out <string> outcome;
+    var out <string> method: json-get(req.response, "method");
+    var out <string> token: json-get(req.response, "token");
+    var out <int> count: json-count(req.response, "items");
+    var out <float> second: json-number(req.response, "items.1.n");
+    var out <float> pi: json-number("{\"pi\": 3.5}", "pi");
+    req := HttpRequest {
+        url: "\{root.base}/things";
+        method: post;
+        headers: ["X-Token: zge"];
+        body: "ping";
+        finished => { root.outcome = "ok \{req.status}"; }
+        failed => { root.outcome = "failed: \{req.error}"; }
+    }
+    TouchArea { clicked => { req.send(); } }
+}

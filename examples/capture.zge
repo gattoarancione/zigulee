@@ -1,0 +1,100 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+import { Button, CheckBox, Palette } from "std-widgets.zge";
+
+// The camera and the microphone: a preview, pictures, a level meter, and
+// a recording played back.
+export component CaptureDemo inherits Window {
+    preferred-width: 640px;
+    preferred-height: 560px;
+    background: Palette.background;
+
+    mic := Microphone {}
+    playback := Audio {
+        source: mic.recorded;
+    }
+
+    VerticalLayout {
+        padding: 16px;
+        spacing: 12px;
+        Rectangle {
+            background: #000;
+            border-radius: 8px;
+            clip: true;
+            cam := Camera {
+                width: 100%;
+                height: 100%;
+                image-fit: cover;
+            }
+            Text {
+                visible: !cam.active;
+                text: cam.available ? "Camera off" : "No camera here";
+                width: 100%;
+                height: 100%;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                color: #fff;
+            }
+        }
+        HorizontalLayout {
+            spacing: 8px;
+            Button {
+                text: cam.active ? "Stop the camera" : "Start the camera";
+                enabled: cam.available;
+                clicked => { cam.active = !cam.active; }
+            }
+            Button {
+                text: "Take a picture";
+                enabled: cam.active;
+                clicked => { cam.take-picture(); }
+            }
+            Image {
+                width: 80px;
+                height: 60px;
+                source: cam.picture;
+            }
+        }
+        HorizontalLayout {
+            spacing: 8px;
+            alignment: start;
+            height: 32px;
+            CheckBox {
+                text: "Listen";
+                enabled: mic.available;
+                checked <=> mic.active;
+            }
+            Rectangle {
+                width: 200px;
+                height: 12px;
+                border-radius: 6px;
+                background: Palette.control-background;
+                Rectangle {
+                    x: 0;
+                    width: parent.width * mic.level;
+                    border-radius: 6px;
+                    background: mic.level > 0.8 ? #e04040 : #40b060;
+                }
+            }
+        }
+        HorizontalLayout {
+            spacing: 8px;
+            Button {
+                text: mic.recording ? "Stop (\{round(mic.duration / 1s)} s)" : "Record";
+                enabled: mic.available;
+                clicked => {
+                    if mic.recording {
+                        mic.stop();
+                    } else {
+                        mic.record();
+                    }
+                }
+            }
+            Button {
+                text: "Play it";
+                enabled: !mic.recording && mic.duration > 0ms;
+                clicked => { playback.play(); }
+            }
+        }
+    }
+}

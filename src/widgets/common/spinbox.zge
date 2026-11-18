@@ -1,0 +1,142 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+import { Palette } from "palette.zge";
+import { Style } from "style.zge";
+
+// A number with up and down buttons. The arrow keys step it, Page Up and
+// Page Down by ten steps, Home and End jump to the ends.
+export component SpinBox inherits Rectangle {
+    var in <int> minimum: 0;
+    var in <int> maximum: 100;
+    var in <int> step: 1;
+    var in <bool> enabled: true;
+    var in-out <int> value;
+    var out <bool> has-focus: fs.has-focus;
+    // Called when the user changes the value.
+    callback edited(int);
+
+    accessible-role: spinbox;
+    accessible-value: "\{root.value}";
+    accessible-value-minimum: root.minimum;
+    accessible-value-maximum: root.maximum;
+    accessible-value-step: root.step;
+    accessible-enabled: root.enabled;
+    accessible-action-increment => { root.set-value(root.value + root.step); }
+    accessible-action-decrement => { root.set-value(root.value - root.step); }
+    function set-value(v: int) {
+        if root.enabled {
+            if max(root.minimum, min(root.maximum, v)) != root.value {
+                root.value = max(root.minimum, min(root.maximum, v));
+                root.edited(root.value);
+            }
+        }
+    }
+
+    min-width: 64px;
+    min-height: Style.control-height;
+    preferred-width: 120px;
+    preferred-height: Style.control-height;
+    max-height: Style.control-height;
+    border-radius: Style.control-radius;
+    border-width: fs.has-focus ? Style.input-focus-border-width : Style.input-border-width;
+    border-color: fs.has-focus ? Palette.input-focus-border : Palette.border;
+    background: !enabled ? Palette.control-disabled
+        : fs.has-focus ? Palette.input-focused-background : Palette.input-background;
+
+    // Clicking the number focuses the box.
+    fs := FocusScope {
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if event.text == Key.UpArrow {
+                root.set-value(root.value + root.step);
+                return accept;
+            }
+            if event.text == Key.DownArrow {
+                root.set-value(root.value - root.step);
+                return accept;
+            }
+            if event.text == Key.PageUp {
+                root.set-value(root.value + 10 * root.step);
+                return accept;
+            }
+            if event.text == Key.PageDown {
+                root.set-value(root.value - 10 * root.step);
+                return accept;
+            }
+            if event.text == Key.Home {
+                root.set-value(root.minimum);
+                return accept;
+            }
+            if event.text == Key.End {
+                root.set-value(root.maximum);
+                return accept;
+            }
+            return reject;
+        }
+    }
+    Text {
+        x: 11px;
+        width: parent.width - 44px;
+        text: "\{root.value}";
+        font-size: Style.font-size;
+        vertical-alignment: center;
+        color: root.enabled ? Palette.foreground : Palette.disabled-foreground;
+    }
+    up := Rectangle {
+        x: parent.width - 30px;
+        y: 3px;
+        width: 26px;
+        height: (parent.height - 6px) / 2;
+        border-radius: 3px;
+        background: up-touch.pressed ? Palette.control-pressed : up-touch.has-hover ? Palette.control-hover : #00000000;
+        Path {
+            x: (parent.width - 8px) / 2;
+            y: (parent.height - 4px) / 2;
+            width: 8px;
+            height: 4px;
+            commands: "M 0 4 L 4 0 L 8 4";
+            stroke: root.enabled && root.value < root.maximum ? Palette.secondary-foreground : Palette.disabled-foreground;
+            stroke-width: 1.2px;
+        }
+        up-touch := TouchArea {
+            enabled: root.enabled;
+            clicked => {
+                fs.focus();
+                root.set-value(root.value + root.step);
+            }
+        }
+    }
+    down := Rectangle {
+        x: parent.width - 30px;
+        y: parent.height / 2;
+        width: 26px;
+        height: (parent.height - 6px) / 2;
+        border-radius: 3px;
+        background: down-touch.pressed ? Palette.control-pressed : down-touch.has-hover ? Palette.control-hover : #00000000;
+        Path {
+            x: (parent.width - 8px) / 2;
+            y: (parent.height - 4px) / 2;
+            width: 8px;
+            height: 4px;
+            commands: "M 0 0 L 4 4 L 8 0";
+            stroke: root.enabled && root.value > root.minimum ? Palette.secondary-foreground : Palette.disabled-foreground;
+            stroke-width: 1.2px;
+        }
+        down-touch := TouchArea {
+            enabled: root.enabled;
+            clicked => {
+                fs.focus();
+                root.set-value(root.value - root.step);
+            }
+        }
+    }
+    Rectangle {
+        x: 1px;
+        y: parent.height - Style.input-underline;
+        width: parent.width - 2px;
+        height: Style.input-underline;
+        background: Palette.accent-background;
+        visible: fs.has-focus && Style.input-underline > 0px;
+    }
+}

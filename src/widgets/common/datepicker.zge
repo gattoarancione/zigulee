@@ -1,0 +1,150 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+import { Palette } from "palette.zge";
+import { Style } from "style.zge";
+
+// A month calendar to pick a date. The arrows in the header change the
+// month shown; clicking a day picks it.
+export component DatePicker inherits Rectangle {
+    var in-out <int> year: 2026;
+    // 1 to 12.
+    var in-out <int> month: 1;
+    var in-out <int> day: 1;
+    var in <[string]> month-names: [
+        @tr("DatePicker" => "January"),
+        @tr("DatePicker" => "February"),
+        @tr("DatePicker" => "March"),
+        @tr("DatePicker" => "April"),
+        @tr("DatePicker" => "May"),
+        @tr("DatePicker" => "June"),
+        @tr("DatePicker" => "July"),
+        @tr("DatePicker" => "August"),
+        @tr("DatePicker" => "September"),
+        @tr("DatePicker" => "October"),
+        @tr("DatePicker" => "November"),
+        @tr("DatePicker" => "December"),
+    ];
+    var in <[string]> weekday-names: [
+        @tr("DatePicker" => "Mo"),
+        @tr("DatePicker" => "Tu"),
+        @tr("DatePicker" => "We"),
+        @tr("DatePicker" => "Th"),
+        @tr("DatePicker" => "Fr"),
+        @tr("DatePicker" => "Sa"),
+        @tr("DatePicker" => "Su"),
+    ];
+    // Called with the year, month and day the user picked.
+    callback picked(int, int, int);
+
+    // The month shown (it starts at the picked date's).
+    var <int> shown-year: year;
+    var <int> shown-month: month;
+    var <length> cell: min(root.width / 7, (root.height - 72px) / 6);
+    // Weekday (Monday = 0) of the first of the shown month, and its days.
+    var <int> offset: weekday(shown-year, shown-month, 1);
+    var <int> days: days-in(shown-year, shown-month);
+
+    public function is-leap(y: int) -> bool {
+        return (mod(y, 4) == 0 && mod(y, 100) != 0) || mod(y, 400) == 0;
+    }
+    public function days-in(y: int, m: int) -> int {
+        if m == 2 {
+            return is-leap(y) ? 29 : 28;
+        }
+        return m == 4 || m == 6 || m == 9 || m == 11 ? 30 : 31;
+    }
+    // Sakamoto's method, Monday = 0.
+    public function weekday(y: int, m: int, d: int) -> int {
+        return weekday-from(m < 3 ? y - 1 : y, m, d);
+    }
+    function weekday-from(y: int, m: int, d: int) -> int {
+        return mod(y + floor(y / 4) - floor(y / 100) + floor(y / 400) + [0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4][m - 1] + d + 6, 7);
+    }
+    public function show-month(y: int, m: int) {
+        root.shown-year = m < 1 ? y - 1 : m > 12 ? y + 1 : y;
+        root.shown-month = m < 1 ? 12 : m > 12 ? 1 : m;
+    }
+    function pick(d: int) {
+        root.year = root.shown-year;
+        root.month = root.shown-month;
+        root.day = d;
+        root.picked(root.year, root.month, root.day);
+    }
+
+    min-width: 220px;
+    min-height: 240px;
+    preferred-width: 280px;
+    preferred-height: 300px;
+    border-radius: Style.card-radius;
+    border-width: 1px;
+    border-color: Palette.border;
+    background: Palette.alternate-background;
+
+    // Header: < Month Year >
+    Text {
+        x: 40px;
+        y: 8px;
+        width: parent.width - 80px;
+        height: 28px;
+        text: root.month-names[root.shown-month - 1] + " " + root.shown-year;
+        font-size: 15px;
+        font-weight: 700;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        color: Palette.foreground;
+    }
+    for arrow[k] in 2 : Rectangle {
+        x: k == 0 ? 8px : root.width - 36px;
+        y: 8px;
+        width: 28px;
+        height: 28px;
+        border-radius: Style.control-radius;
+        background: arrow-touch.pressed ? Palette.control-pressed : arrow-touch.has-hover ? Palette.control-hover : #00000000;
+        Path {
+            x: 11px;
+            y: 9px;
+            width: 6px;
+            height: 10px;
+            commands: k == 0 ? "M 6 0 L 0 5 L 6 10" : "M 0 0 L 6 5 L 0 10";
+            stroke: Palette.secondary-foreground;
+            stroke-width: 1.5px;
+        }
+        arrow-touch := TouchArea {
+            clicked => { root.show-month(root.shown-year, root.shown-month + (k == 0 ? -1 : 1)); }
+        }
+    }
+    // Weekday names.
+    for name[w] in root.weekday-names : Text {
+        x: (root.width - 7 * root.cell) / 2 + w * root.cell;
+        y: 40px;
+        width: root.cell;
+        height: 24px;
+        text: name;
+        font-size: 12px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        color: Palette.secondary-foreground;
+    }
+    // Days: six weeks of seven.
+    for i in 42 : Rectangle {
+        x: (root.width - 7 * root.cell) / 2 + mod(i, 7) * root.cell + 2px;
+        y: 66px + floor(i / 7) * root.cell + 2px;
+        width: root.cell - 4px;
+        height: root.cell - 4px;
+        border-radius: self.width / 2;
+        visible: i >= root.offset && i - root.offset < root.days;
+        background: root.shown-year == root.year && root.shown-month == root.month && i - root.offset + 1 == root.day ? Palette.accent-background
+            : day-touch.pressed ? Palette.control-pressed : day-touch.has-hover ? Palette.control-hover : #00000000;
+        Text {
+            text: "\{i - root.offset + 1}";
+            font-size: 13px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            color: root.shown-year == root.year && root.shown-month == root.month && i - root.offset + 1 == root.day ? Palette.accent-foreground : Palette.foreground;
+        }
+        day-touch := TouchArea {
+            clicked => { root.pick(i - root.offset + 1); }
+        }
+    }
+}

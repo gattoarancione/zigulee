@@ -1,0 +1,53 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+import { Palette } from "palette.zge";
+import { Style } from "style.zge";
+
+// A hint shown when the pointer rests on something: put it in the element
+// and bind `shown` to the hover (`shown: area.has-hover`). It appears after
+// `delay`, above the element (kept in the window), and takes no input:
+// clicks go to what is under it.
+export component ToolTip inherits PopupWindow {
+    var in <string> text;
+    // Whether it should show (it does after `delay`).
+    var in <bool> shown;
+    var in <duration> delay: 700ms;
+
+    input-transparent: true;
+    close-policy: no-auto-close;
+    fit-in-window: true;
+    x: 0px;
+    y: 0px - self.height - 6px;
+    width: min(label.preferred-width, 300px) + 16px;
+    height: label.preferred-height + 10px;
+
+    changed shown => {
+        if !root.shown {
+            root.close();
+        }
+    }
+    Timer {
+        interval: root.delay;
+        running: root.shown && !root.is-open;
+        triggered => { root.show(); }
+    }
+
+    Rectangle {
+        border-radius: Style.control-radius;
+        border-width: 1px;
+        border-color: Palette.border;
+        background: Palette.alternate-background;
+        label := Text {
+            x: 8px;
+            y: 5px;
+            width: parent.width - 16px;
+            height: parent.height - 10px;
+            text: root.text;
+            wrap: word-wrap;
+            font-size: Style.font-size - 1px;
+            color: Palette.foreground;
+            vertical-alignment: center;
+        }
+    }
+}

@@ -1,0 +1,100 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+import { Slider, CheckBox, Palette } from "std-widgets.zge";
+
+// A small 3D scene: a spinning cube, a glTF model, a ball and a floor, the
+// camera going round them.
+export component Scene inherits Window {
+    preferred-width: 520px;
+    preferred-height: 480px;
+    background: Palette.background;
+    title: "Scene";
+    var in-out <float> orbit: 20;
+    var in-out <float> spin: 0;
+    var in-out <bool> spinning: true;
+    var in-out <float> shine: 0.6;
+    var in-out <bool> picked;
+    // Scales every light, the ambient one too.
+    var in-out <float> light: 1;
+
+    Timer {
+        interval: 16ms;
+        running: root.spinning;
+        triggered => { root.spin += 1.5; }
+    }
+
+    VerticalLayout {
+        padding: 16px;
+        spacing: 10px;
+
+        View3D {
+            background: #0f172a;
+            ambient: #334155;
+            ambient-brightness: root.light;
+            // On a ring around the middle, looking at it.
+            Node {
+                yaw: root.orbit;
+                PerspectiveCamera {
+                    position-y: 1.6;
+                    position-z: 5;
+                    pitch: -17;
+                    field-of-view: 40;
+                }
+            }
+            DirectionalLight {
+                pitch: -45;
+                yaw: -35;
+                brightness: root.light;
+            }
+            PointLight {
+                position-x: 2;
+                position-y: 1.2;
+                position-z: 2;
+                color: #fbbf24;
+                brightness: 0.8 * root.light;
+            }
+            Model {
+                mesh: plane;
+                pitch: -90;
+                position-y: -0.6;
+                size-x: 7;
+                size-y: 7;
+                color: #64748b;
+                roughness: 0.9;
+            }
+            // Click it to change its color.
+            Model {
+                position-x: -0.9;
+                yaw: root.spin;
+                pitch: root.spin * 0.5;
+                color: root.picked ? #22c55e : #ef4444;
+                roughness: 1 - root.shine;
+                clicked => { root.picked = !root.picked; }
+            }
+            // A glTF model (examples/models/ring.glb), turning too.
+            Model {
+                source: @model-url("models/ring.glb");
+                position-z: 1.1;
+                position-y: -0.15;
+                yaw: -root.spin;
+            }
+            Model {
+                mesh: sphere;
+                position-x: 0.9;
+                color: #3b82f6;
+                metallic: 0.6;
+                roughness: 1 - root.shine;
+            }
+        }
+
+        CheckBox { text: "Spin"; checked <=> root.spinning; }
+        Text { text: "Camera: \{round(root.orbit)}°"; color: Palette.foreground; }
+        Slider { minimum: -180; maximum: 180; value <=> root.orbit; }
+        // The glTF ring keeps its own material.
+        Text { text: "Shine of the cube and the ball: \{round(root.shine * 100)}%"; color: Palette.foreground; }
+        Slider { minimum: 0; maximum: 1; value <=> root.shine; }
+        Text { text: "Light: \{round(root.light * 100)}%"; color: Palette.foreground; }
+        Slider { minimum: 0; maximum: 2; value <=> root.light; }
+    }
+}

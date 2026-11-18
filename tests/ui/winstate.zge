@@ -1,0 +1,15 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// How the system shows the window, from .zge and back.
+export component Kiosk inherits Window {
+    width: 200px;
+    height: 100px;
+    var in-out <bool> pinned: true;
+    var in-out <bool> big;
+    // What the system's bars and the keyboard leave of the height.
+    var out <length> clear-height: root.height - root.safe-area-top - max(root.safe-area-bottom, root.keyboard-height);
+    always-on-top: root.pinned;
+    maximized <=> root.big;
+    TouchArea { clicked => { root.fullscreen = !root.fullscreen; } }
+}

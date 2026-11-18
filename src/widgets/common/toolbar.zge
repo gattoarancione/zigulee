@@ -1,0 +1,99 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+import { Palette } from "palette.zge";
+import { Style } from "style.zge";
+
+// A row of tool buttons (and separators) along the top of a window.
+export component ToolBar inherits Rectangle {
+    background: Palette.alternate-background;
+    min-height: Style.control-height + 8px;
+    preferred-height: Style.control-height + 8px;
+    max-height: Style.control-height + 8px;
+    HorizontalLayout {
+        padding: 4px;
+        spacing: 2px;
+        alignment: start;
+        @children
+    }
+    Rectangle {
+        y: parent.height - 1px;
+        height: 1px;
+        background: Palette.border;
+    }
+}
+
+// A flat button for a tool bar: an `icon` and/or `text`. `checkable` ones
+// stay down while `checked`.
+export component ToolButton inherits Rectangle {
+    var in <string> text;
+    var in <image> icon;
+    var in <bool> enabled: true;
+    var in <bool> checkable;
+    var in-out <bool> checked;
+    var out <bool> pressed: touch.pressed;
+    var out <bool> has-hover: touch.has-hover;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-enabled: root.enabled;
+    accessible-checkable: root.checkable;
+    accessible-checked: root.checked;
+    accessible-action-default => { root.activate(); }
+    function activate() {
+        if root.enabled {
+            if root.checkable { root.checked = !root.checked; }
+            root.clicked();
+        }
+    }
+
+    var <bool> has-icon: root.icon.width > 0;
+    min-width: Style.control-height;
+    min-height: Style.control-height;
+    max-height: Style.control-height;
+    preferred-height: Style.control-height;
+    preferred-width: max(Style.control-height, (root.has-icon ? 20px : 0px) + (root.text == "" ? 0px : label.preferred-width + (root.has-icon ? 6px : 0px)) + 16px);
+    border-radius: Style.control-radius;
+    background: !root.enabled ? #00000000
+        : touch.pressed || root.checked ? Palette.control-pressed
+        : touch.has-hover ? Palette.control-hover : #00000000;
+    animate background { duration: 80ms; }
+
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 8px;
+        spacing: 6px;
+        alignment: center;
+        if root.has-icon : Image {
+            width: 20px;
+            source: root.icon;
+            colorize: root.enabled ? Palette.foreground : Palette.disabled-foreground;
+        }
+        label := Text {
+            visible: root.text != "";
+            text: root.text;
+            font-size: Style.font-size;
+            vertical-alignment: center;
+            color: root.enabled ? Palette.foreground : Palette.disabled-foreground;
+        }
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.activate(); }
+    }
+}
+
+// A thin line between groups of tool buttons.
+export component ToolSeparator inherits Empty {
+    min-width: 9px;
+    max-width: 9px;
+    preferred-width: 9px;
+    Rectangle {
+        x: 4px;
+        y: 6px;
+        width: 1px;
+        height: parent.height - 12px;
+        background: Palette.border;
+    }
+}

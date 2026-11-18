@@ -1,0 +1,21 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+import { LineEdit, TextEdit, VirtualKeyboard, Palette } from "std-widgets.zge";
+
+// Typing on a touch screen: the keyboard opens while a field has the focus.
+export component KeyboardDemo inherits Window {
+    preferred-width: 480px;
+    preferred-height: 400px;
+    background: Palette.background;
+
+    VerticalLayout {
+        VerticalLayout {
+            padding: 16px;
+            spacing: 12px;
+            name := LineEdit { placeholder-text: "Name"; }
+            TextEdit { text: "Notes"; }
+        }
+        VirtualKeyboard {}
+    }
+}

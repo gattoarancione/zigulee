@@ -1,0 +1,75 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// Swipes and pinches.
+
+export component Gestures inherits Window {
+    width: 200px;
+    height: 150px;
+    background: #ffffff;
+    var out <string> last-swipe;
+    var out <float> zoom: 1;
+    var out <int> taps;
+    var out <int> double-taps;
+    // The touch area's pointer events: d(own), u(p), m(ove), c(ancel),
+    // R for the right button.
+    var out <string> events;
+    // Every finger, whoever takes it.
+    var out <int> activity;
+    // Asleep after a second without input.
+    var out <bool> asleep;
+    idle := Timer {
+        interval: 1s;
+        running: false;
+        triggered => {
+            asleep = true;
+            idle.stop();
+        }
+    }
+    input-activity => {
+        activity += 1;
+        asleep = false;
+        idle.restart();
+    }
+
+    swipe := SwipeArea {
+        swiped(direction) => {
+            if direction == SwipeDirection.left { root.last-swipe = "left"; }
+            if direction == SwipeDirection.right { root.last-swipe = "right"; }
+            if direction == SwipeDirection.up { root.last-swipe = "up"; }
+            if direction == SwipeDirection.down { root.last-swipe = "down"; }
+        }
+        // Still clicked through the swipe area.
+        TouchArea {
+            double-click-interval: 300ms;
+            clicked => { root.taps += 1; }
+            double-clicked => { root.double-taps += 1; }
+            pointer-event(e) => {
+                if e.kind == PointerEventKind.down { root.events += "d"; }
+                if e.kind == PointerEventKind.up { root.events += "u"; }
+                if e.kind == PointerEventKind.move { root.events += "m"; }
+                if e.kind == PointerEventKind.cancel { root.events += "c"; }
+                if e.button == PointerEventButton.right { root.events += "R"; }
+            }
+        }
+        Rectangle {
+            x: swipe.offset-x;
+            width: 60px;
+            height: 40px;
+            background: swipe.swiping ? #2563eb : #1e3a8a;
+        }
+    }
+
+    pinch := PinchArea {
+        y: 100px;
+        height: 50px;
+        finished => { root.zoom = root.zoom * self.pinch-scale; }
+        Rectangle {
+            width: 40px * (pinch.active ? pinch.pinch-scale : 1);
+            height: 20px;
+            background: #16a34a;
+        }
+    }
+
+    Text { y: 60px; text: root.last-swipe + " " + root.taps; }
+}

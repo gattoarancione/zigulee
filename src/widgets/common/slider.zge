@@ -1,0 +1,149 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+import { Palette } from "palette.zge";
+import { Style } from "style.zge";
+
+// A horizontal slider. Drag the thumb or click the track; the arrow keys
+// move by `step` (a hundredth of the range without one), Home and End
+// jump to the ends.
+export component Slider inherits Empty {
+    var in <float> minimum: 0;
+    var in <float> maximum: 100;
+    // Values snap to multiples of `step` from `minimum` (0: no snapping).
+    var in <float> step: 0;
+    var in <bool> enabled: true;
+    var in-out <float> value;
+    var out <bool> has-focus: fs.has-focus;
+    // Called when the user changes the value.
+    callback changed(float);
+
+    accessible-role: slider;
+    accessible-value: "\{root.value}";
+    accessible-value-minimum: root.minimum;
+    accessible-value-maximum: root.maximum;
+    accessible-value-step: root.step;
+    accessible-enabled: root.enabled;
+    accessible-action-increment => {
+        if root.enabled {
+            root.set-value(root.value + (root.step > 0 ? root.step : (root.maximum - root.minimum) / 100));
+        }
+    }
+    accessible-action-decrement => {
+        if root.enabled {
+            root.set-value(root.value - (root.step > 0 ? root.step : (root.maximum - root.minimum) / 100));
+        }
+    }
+
+    // Snaps and clamps `v`, then applies it.
+    function set-value(v: float) {
+        root.apply(max(root.minimum, min(root.maximum,
+            root.step > 0 ? root.minimum + round((v - root.minimum) / root.step) * root.step : v)));
+    }
+    function apply(v: float) {
+        if v != root.value {
+            root.value = v;
+            root.changed(v);
+        }
+    }
+    function set-from-pointer() {
+        root.set-value(root.minimum + (touch.mouse-x - Style.slider-thumb / 2) / (root.width - Style.slider-thumb) * (root.maximum - root.minimum));
+    }
+
+    var <float> ratio: root.maximum > root.minimum ? max(0, min(1, (root.value - root.minimum) / (root.maximum - root.minimum))) : 0;
+
+    var <length> dot-size: Style.slider-dot + (!root.enabled ? 0px : touch.pressed ? -2px : touch.has-hover ? 2px : 0px);
+
+    min-width: 60px;
+    min-height: Style.control-height;
+    preferred-width: 200px;
+    preferred-height: Style.control-height;
+    max-height: Style.control-height;
+
+    track := Rectangle {
+        x: Style.slider-thumb / 2;
+        y: (parent.height - Style.slider-track) / 2;
+        width: parent.width - Style.slider-thumb;
+        height: Style.slider-track;
+        border-radius: Style.slider-track / 2;
+        background: root.enabled ? Palette.track : Palette.disabled-foreground;
+    }
+    Rectangle {
+        x: track.x;
+        y: track.y;
+        width: track.width * root.ratio;
+        height: Style.slider-track;
+        border-radius: Style.slider-track / 2;
+        background: root.enabled ? Palette.accent-background : Palette.disabled-foreground;
+    }
+    thumb := Rectangle {
+        x: track.x + track.width * root.ratio - Style.slider-thumb / 2;
+        y: (parent.height - Style.slider-thumb) / 2;
+        width: Style.slider-thumb;
+        height: Style.slider-thumb;
+        border-radius: Style.slider-thumb / 2;
+        border-width: Style.slider-thumb-border-width;
+        border-color: Palette.border;
+        background: Palette.slider-thumb;
+        drop-shadow-offset-y: Style.knob-shadow-y;
+        drop-shadow-blur: Style.knob-shadow-blur;
+        drop-shadow-color: root.enabled ? Palette.knob-shadow : #00000000;
+
+        Rectangle {
+            visible: Style.slider-dot > 0px;
+            x: (parent.width - root.dot-size) / 2;
+            y: (parent.height - root.dot-size) / 2;
+            width: root.dot-size;
+            height: root.dot-size;
+            border-radius: root.dot-size / 2;
+            background: root.enabled ? Palette.accent-background : Palette.disabled-foreground;
+            animate x, y, width, height { duration: 100ms; }
+        }
+        Rectangle {
+            x: 0px - Style.focus-ring-offset;
+            y: 0px - Style.focus-ring-offset;
+            width: parent.width + 2 * Style.focus-ring-offset;
+            height: parent.height + 2 * Style.focus-ring-offset;
+            border-radius: Style.slider-thumb / 2 + Style.focus-ring-offset;
+            border-width: Style.focus-ring-width;
+            border-color: Palette.focus-ring;
+            visible: fs.has-focus;
+        }
+    }
+    fs := FocusScope {
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if event.text == Key.RightArrow || event.text == Key.UpArrow {
+                root.set-value(root.value + (root.step > 0 ? root.step : (root.maximum - root.minimum) / 100));
+                return accept;
+            }
+            if event.text == Key.LeftArrow || event.text == Key.DownArrow {
+                root.set-value(root.value - (root.step > 0 ? root.step : (root.maximum - root.minimum) / 100));
+                return accept;
+            }
+            if event.text == Key.Home {
+                root.set-value(root.minimum);
+                return accept;
+            }
+            if event.text == Key.End {
+                root.set-value(root.maximum);
+                return accept;
+            }
+            return reject;
+        }
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        changed pressed => {
+            if self.pressed {
+                fs.focus();
+                root.set-from-pointer();
+            }
+        }
+        moved => {
+            if self.pressed {
+                root.set-from-pointer();
+            }
+        }
+    }
+}

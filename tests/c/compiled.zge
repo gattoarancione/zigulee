@@ -1,0 +1,29 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// A compiled component used from C (tests/c/compiled_test.c).
+struct Address { city: string, }
+struct Contact { name: string, age: int, home: Address, }
+enum Mode { light, dark }
+
+export global Theme {
+    var in-out <color> accent: #336699;
+}
+
+export component People inherits Window {
+    width: 120px;
+    height: 80px;
+    var in-out <int> count: 1;
+    var in <string> name: "Ada";
+    var out <string> greeting: "Hello, \{name}!";
+    var in-out <Mode> mode;
+    var in-out <Contact> person: { name: "Ada", age: 36, home: { city: "London" } };
+    var in <[Contact]> people;
+    var out <int> total: people.length;
+    var in-out <length> size: 10px;
+    background: mode == Mode.dark ? #000000 : Theme.accent;
+    callback clicked();
+    callback describe(Contact, int) -> string;
+    public function older(c: Contact) -> Contact { return { name: c.name, age: c.age + 1, home: c.home }; }
+    public function shout(s: string) -> string { return s + "!"; }
+}

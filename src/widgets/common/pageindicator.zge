@@ -1,0 +1,48 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+import { Palette } from "palette.zge";
+import { Style } from "style.zge";
+
+// A dot for each of `count` pages, the one at `current-index` filled (for
+// a SwipeView: `count: view.count; current-index <=> view.current-index;`).
+// With `interactive`, a click on a dot goes to its page.
+export component PageIndicator inherits Empty {
+    var in <int> count;
+    var in-out <int> current-index;
+    var in <bool> interactive: true;
+    var in <length> dot-size: 8px;
+    var in <length> spacing: 8px;
+
+    accessible-role: tab-list;
+
+    min-height: root.dot-size + 8px;
+    preferred-height: root.dot-size + 8px;
+    max-height: root.dot-size + 8px;
+    preferred-width: root.count * (root.dot-size + root.spacing) + root.spacing;
+    min-width: root.count * (root.dot-size + root.spacing) + root.spacing;
+
+    HorizontalLayout {
+        spacing: root.spacing;
+        padding-left: root.spacing;
+        padding-right: root.spacing;
+        padding-top: 4px;
+        padding-bottom: 4px;
+        alignment: center;
+        for i in root.count : Rectangle {
+            width: root.dot-size;
+            height: root.dot-size;
+            border-radius: root.dot-size / 2;
+            background: i == root.current-index ? Palette.accent-background
+                : touch.has-hover && root.interactive ? Palette.secondary-foreground : Palette.strong-border;
+            animate background { duration: 120ms; }
+            accessible-role: tab;
+            accessible-label: "Page \{i + 1}";
+            accessible-checked: i == root.current-index;
+            touch := TouchArea {
+                enabled: root.interactive;
+                clicked => { root.current-index = i; }
+            }
+        }
+    }
+}

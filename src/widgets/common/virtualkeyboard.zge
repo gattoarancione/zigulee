@@ -1,0 +1,226 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+import { Palette } from "palette.zge";
+import { Style } from "style.zge";
+
+// A key: `text` shown (`label` instead, if set), typed when clicked; held
+// down, a `repeat`ing key types again and again.
+component VirtualKey inherits Rectangle {
+    var in <string> text;
+    var in <string> label;
+    var in <bool> special;
+    var in <bool> highlighted;
+    var in <bool> repeat;
+    var in <length> font-size;
+    callback clicked();
+    // Held long enough to repeat: the release types nothing more.
+    var <bool> repeating;
+
+    accessible-role: button;
+    accessible-label: root.label == "" ? root.text : root.label;
+    accessible-action-default => { root.clicked(); }
+
+    // As wide as `horizontal-stretch` makes it.
+    min-width: 0px;
+    preferred-width: 0px;
+    horizontal-stretch: 1;
+    border-radius: Style.button-radius + 2px;
+    background: touch.pressed ? (root.highlighted ? Palette.accent-pressed : Palette.control-pressed)
+        : root.highlighted ? Palette.accent-background
+        : root.special ? Palette.control-disabled : Palette.control-background;
+    border-width: Style.button-border-width;
+    border-color: Palette.border;
+    drop-shadow-offset-y: 1px;
+    drop-shadow-color: Palette.control-shadow;
+
+    Text {
+        text: root.label == "" ? root.text : root.label;
+        font-size: root.font-size;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        color: root.highlighted ? Palette.accent-foreground : Palette.foreground;
+    }
+    touch := TouchArea {
+        changed pressed => {
+            if self.pressed {
+                root.repeating = false;
+            }
+        }
+        clicked => {
+            if !root.repeating {
+                root.clicked();
+            }
+        }
+    }
+    Timer {
+        interval: root.repeating ? 60ms : 450ms;
+        running: root.repeat && touch.pressed;
+        triggered => {
+            root.repeating = true;
+            root.clicked();
+        }
+    }
+}
+
+// An on-screen keyboard, for touch screens without a physical one (KMS,
+// microcontrollers). It types into the focused text input and is open
+// only while one can be typed into (or `always-open`): put it at the
+// bottom of the window's layout, where it takes no room while closed.
+// Letters (Shift once for a capital, twice to lock), digits and symbols
+// (?123, then =\<), Backspace (held: it repeats), space and Return. The
+// key at the bottom right closes it, taking the focus away.
+export component VirtualKeyboard inherits Rectangle {
+    var in <bool> always-open;
+    // The height of a key.
+    var in <length> key-height: 44px;
+    var in <length> spacing: 6px;
+    var out <bool> open: root.always-open || input.active;
+    // 0: letters, 1: digits and symbols, 2: more symbols.
+    var <int> layer;
+    // 0: lower case, 1: one capital, 2: capitals.
+    var <int> shift;
+    var <length> key-font-size: min(root.key-height * 0.45, 22px);
+
+    var <[string]> row1: root.layer == 1 ? ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"]
+        : root.layer == 2 ? ["[", "]", "{", "}", "#", "%", "^", "*", "+", "="]
+        : root.shift > 0 ? ["Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"]
+        : ["q", "w", "e", "r", "t", "y", "u", "i", "o", "p"];
+    var <[string]> row2: root.layer == 1 ? ["-", "/", ":", ";", "(", ")", "$", "&", "@"]
+        : root.layer == 2 ? ["_", "\\", "|", "~", "<", ">", "€", "£", "¥"]
+        : root.shift > 0 ? ["A", "S", "D", "F", "G", "H", "J", "K", "L"]
+        : ["a", "s", "d", "f", "g", "h", "j", "k", "l"];
+    var <[string]> row3: root.layer == 1 ? [".", ",", "?", "!", "'", "\"", "*"]
+        : root.layer == 2 ? [".", ",", "?", "!", "'", "\"", "`"]
+        : root.shift > 0 ? ["Z", "X", "C", "V", "B", "N", "M"]
+        : ["z", "x", "c", "v", "b", "n", "m"];
+
+    function press(text: string) {
+        input.send(text);
+        if root.shift == 1 {
+            root.shift = 0;
+        }
+    }
+
+    accessible-role: group;
+    accessible-label: "Keyboard";
+
+    var <length> shown-height: root.open ? 4 * root.key-height + 5 * root.spacing : 0px;
+    min-height: root.shown-height;
+    preferred-height: root.shown-height;
+    max-height: root.shown-height;
+    min-width: 10 * 24px;
+    preferred-width: 10 * 56px;
+    visible: root.open;
+    clip: true;
+    background: Palette.alternate-background;
+    border-width: 1px;
+    border-color: Palette.border;
+
+    // Clicks between the keys go no further.
+    TouchArea {}
+    input := KeyboardInput {}
+
+    VerticalLayout {
+        padding: root.spacing;
+        spacing: root.spacing;
+        HorizontalLayout {
+            spacing: root.spacing;
+            for k in root.row1 : VirtualKey {
+                text: k;
+                font-size: root.key-font-size;
+                clicked => { root.press(k); }
+            }
+        }
+        HorizontalLayout {
+            spacing: root.spacing;
+            // Half a key on each side.
+            Empty { horizontal-stretch: 0.5; }
+            for k in root.row2 : VirtualKey {
+                text: k;
+                font-size: root.key-font-size;
+                clicked => { root.press(k); }
+            }
+            Empty { horizontal-stretch: 0.5; }
+        }
+        HorizontalLayout {
+            spacing: root.spacing;
+            VirtualKey {
+                horizontal-stretch: 1.5;
+                label: root.layer == 0 ? (root.shift == 2 ? "⇪" : "⇧") : root.layer == 1 ? "=\\<" : "?123";
+                special: true;
+                highlighted: root.layer == 0 && root.shift > 0;
+                font-size: root.layer == 0 ? root.key-font-size : root.key-font-size * 0.8;
+                accessible-label: root.layer == 0 ? "Shift" : root.layer == 1 ? "More symbols" : "Digits and symbols";
+                clicked => {
+                    if root.layer == 0 {
+                        root.shift = mod(root.shift + 1, 3);
+                    } else {
+                        root.layer = root.layer == 1 ? 2 : 1;
+                    }
+                }
+            }
+            for k in root.row3 : VirtualKey {
+                text: k;
+                font-size: root.key-font-size;
+                clicked => { root.press(k); }
+            }
+            VirtualKey {
+                horizontal-stretch: 1.5;
+                label: "⌫";
+                special: true;
+                repeat: true;
+                font-size: root.key-font-size;
+                accessible-label: "Backspace";
+                clicked => { input.send(Key.Backspace); }
+            }
+        }
+        HorizontalLayout {
+            spacing: root.spacing;
+            VirtualKey {
+                horizontal-stretch: 1.5;
+                label: root.layer == 0 ? "?123" : "ABC";
+                special: true;
+                font-size: root.key-font-size * 0.8;
+                accessible-label: root.layer == 0 ? "Digits and symbols" : "Letters";
+                clicked => {
+                    root.layer = root.layer == 0 ? 1 : 0;
+                }
+            }
+            VirtualKey {
+                text: ",";
+                font-size: root.key-font-size;
+                clicked => { root.press(","); }
+            }
+            VirtualKey {
+                horizontal-stretch: 4;
+                text: " ";
+                label: "space";
+                font-size: root.key-font-size * 0.7;
+                accessible-label: "Space";
+                clicked => { root.press(" "); }
+            }
+            VirtualKey {
+                text: ".";
+                font-size: root.key-font-size;
+                clicked => { root.press("."); }
+            }
+            VirtualKey {
+                horizontal-stretch: 1.5;
+                label: "↵";
+                special: true;
+                highlighted: !input.multi-line;
+                font-size: root.key-font-size;
+                accessible-label: "Return";
+                clicked => { input.send(Key.Return); }
+            }
+            VirtualKey {
+                label: "⌄";
+                special: true;
+                font-size: root.key-font-size;
+                accessible-label: "Close the keyboard";
+                clicked => { input.dismiss(); }
+            }
+        }
+    }
+}

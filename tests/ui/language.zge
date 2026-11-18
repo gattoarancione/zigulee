@@ -1,0 +1,217 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// Structs, enums, states, changed, GridLayout, Flickable, TextInput,
+// Timer, Image, Audio, Sound, Music and Video: exercised by
+// tests/ui_test.zig.
+
+import { Sound, Music } from "std-widgets.zge";
+
+enum Mode { light, dark }
+
+struct Contact {
+    name: string,
+    age: int,
+}
+
+// Functions: public ones are callable from outside.
+component Counter inherits Rectangle {
+    var in-out <int> n;
+    var out <int> doubled: twice(n);
+    public function bump(by: int) -> int {
+        n += by;
+        return n;
+    }
+    function twice(x: int) -> int {
+        return x * 2;
+    }
+    background: n > 0 ? #00aa00 : #aa0000;
+}
+
+export component Language inherits Window {
+    width: 300px;
+    height: 400px;
+
+    var in-out <Mode> mode: Mode.light;
+    var in-out <[Contact]> contacts: [{ name: "Ada", age: 36 }, { name: "Grace", age: 85 }];
+    var out <string> first-name: contacts[0].name;
+    var out <bool> is-dark: mode == dark;
+    var out <int> mode-changes: 0;
+    var out <int> ticks: 0;
+    var in-out <bool> ticking: false;
+    var out <int> chimes: 0;
+    var out <int> clips: 0;
+    // Durations scaled by floats, divided by ints.
+    var in <float> three-quarters: 0.75;
+    var out <duration> scaled: three-quarters * 2s;
+    var out <duration> halved: 3s / 2;
+    var out <duration> slowed: 1s / 0.5;
+    var out <duration> clip-length: clip.duration;
+    var out <duration> chime-length: chime.duration;
+    var out <string> typed <=> input.text;
+    var out <int> submitted: 0;
+    var out <int> bumped;
+    var out <string> counter-label: describe(counter.doubled);
+    function describe(x: int) -> string {
+        return "doubled: \{x}";
+    }
+    // Sorted and filtered models.
+    var in-out <int> min-age: 40;
+    var out <[Contact]> elders: contacts.filter(c => c.age >= min-age).sort(c => c.name).reverse();
+    var out <[string]> sorted-words: ["pear", "fig", "apple"].sort(s => s);
+    var out <string> elder-names: names-of(elders);
+    function names-of(people: [Contact]) -> string {
+        let text = "";
+        for p in people { text += p.name + ";"; }
+        return text;
+    }
+
+    // Loops and local variables.
+    var out <int> odd-sum: odd-total(9);
+    var out <string> roll: roll-call(contacts);
+    var out <int> grown: 0;
+    function odd-total(n: int) -> int {
+        let total = 0;
+        let i = 0;
+        while true {
+            i += 1;
+            if i > n { break; }
+            if mod(i, 2) == 0 { continue; }
+            total += i;
+        }
+        return total;
+    }
+    function roll-call(people: [Contact]) -> string {
+        let text: string = "";
+        for p[i] in people {
+            if i > 0 { text += ", "; }
+            let age = p.age;
+            text = text + p.name + " (" + age + ")";
+        }
+        for k in 3 { text += "."; }
+        return text;
+    }
+    callback grow();
+    grow => {
+        let width = 2px;
+        for step in 4 {
+            width *= 2;
+        }
+        grown = round(width / 1px);
+    }
+
+    callback press-counter();
+    press-counter => {
+        bumped = counter.bump(2);
+    }
+
+    changed mode => {
+        mode-changes += 1;
+    }
+
+    VerticalLayout {
+        spacing: 4px;
+
+        Text { text: root.roll + " " + root.odd-sum; height: 14px; }
+        Text { text: root.elder-names; height: 14px; }
+        HorizontalLayout {
+            height: 14px;
+            for c in root.contacts.sort(c => -c.age) : Text { text: c.name; }
+        }
+        counter := Counter {
+            height: 10px;
+            TouchArea { clicked => { root.press-counter(); } }
+        }
+
+        grid := GridLayout {
+            spacing: 4px;
+            height: 50px;
+            Row {
+                box := Rectangle {
+                    background: #ff0000;
+                    states [
+                        darkened when root.mode == Mode.dark : {
+                            background: #000000;
+                            label.color: white;
+                        }
+                    ]
+                    label := Text { text: "box"; color: black; }
+                }
+                second := Rectangle { background: #00ff00; }
+            }
+            Row {
+                wide := Rectangle { colspan: 2; background: #0000ff; }
+            }
+        }
+
+        list := Flickable {
+            height: 60px;
+            column := VerticalLayout {
+                for contact in contacts : Text {
+                    height: 20px;
+                    text: "\{contact.name} (\{contact.age})";
+                    font-weight: contact.age > 50 ? 700 : 400;
+                }
+            }
+        }
+
+        input := TextInput {
+            font-size: 16px;
+            accepted => { submitted += 1; }
+        }
+
+        chime := Audio {
+            source: @audio-url("chime.wav");
+            volume: 0.5;
+            finished => { root.chimes += 1; }
+        }
+
+        ding := Sound { source: @audio-url("chime.wav"); }
+        tune := Music { source: @audio-url("chime.wav"); fade-out: 2s; }
+
+        clip := Video {
+            source: @video-url("blink.png");
+            height: 20px;
+            finished => { root.clips += 1; }
+        }
+
+        picture := Image {
+            source: @image-url("checker.png");
+            image-rendering: pixelated;
+            height: 20px;
+        }
+
+        // A GIF going round, 100 ms a frame.
+        spinner := AnimatedImage {
+            source: @image-url("spinner.gif");
+            image-rendering: pixelated;
+            height: 16px;
+            finished => { root.clips += 100; }
+        }
+
+        // Stretched, its 2-pixel frame kept: a nine-slice image.
+        panel := Image {
+            source: @image-url("frame.png", nine-slice(2));
+            image-fit: fill;
+            height: 24px;
+        }
+
+        // Fast in, slow out.
+        fader := Rectangle {
+            background: #ffffff;
+            states [
+                active when root.mode == Mode.dark : {
+                    background: #000000;
+                    in { animate background { duration: 100ms; } }
+                    out { animate background { duration: 400ms; } }
+                }
+            ]
+        }
+
+        Timer {
+            interval: 100ms;
+            running: ticking;
+            triggered => { ticks += 1; }
+        }
+    }
+}

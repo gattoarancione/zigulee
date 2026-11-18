@@ -1,0 +1,26 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// A drawer.
+import { Button, Drawer, DrawerEdge } from "std-widgets.zge";
+
+export component Drawers inherits Window {
+    width: 300px;
+    height: 200px;
+    background: #ffffff;
+    var out <int> picks;
+    var out <int> gone;
+    menu := Drawer {
+        size: 160px;
+        dismissed => { root.gone += 1; }
+        Button { text: "Pick"; clicked => { root.picks += 1; menu.dismiss(); } }
+    }
+    Button {
+        x: 200px;
+        y: 150px;
+        width: 90px;
+        height: 32px;
+        text: "Menu";
+        clicked => { menu.open(); }
+    }
+}

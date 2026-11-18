@@ -1,0 +1,30 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// A window component, and one inheriting it: another title, a wider
+// window, its own property and handler.
+export component Base inherits Window {
+    width: 200px;
+    height: 100px;
+    title: "Base";
+    background: #ffffff;
+    var in-out <int> count;
+    callback bumped();
+    Rectangle {
+        x: 10px;
+        y: 10px;
+        width: 40px + root.count * 10px;
+        height: 20px;
+        background: #2563eb;
+        TouchArea { clicked => { root.count += 1; root.bumped(); } }
+    }
+}
+
+export component Big inherits Base {
+    width: 300px;
+    title: "Big";
+    count: 2;
+    var in-out <int> bumps;
+    var out <string> label: "\{root.count} clicks";
+    bumped => { root.bumps += 1; }
+}

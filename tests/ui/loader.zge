@@ -1,0 +1,67 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// Components as values: Loader, component properties (delegates).
+
+component Card inherits Rectangle {
+    var in <string> label;
+    var in <int> index;
+    background: index == 1 ? #2563eb : #e11d48;
+    Text { text: label + " #" + index; color: white; }
+}
+
+component Plain inherits Rectangle {
+    var in <string> label: "plain";
+    background: #16a34a;
+    Text { text: label; color: white; }
+}
+
+// A list drawing its rows with the component it is given.
+component Rows inherits Rectangle {
+    var in <component> delegate;
+    var in <[string]> items;
+    VerticalLayout {
+        spacing: 2px;
+        for item[i] in items : Loader {
+            source: root.delegate;
+            label: item;
+            index: i;
+            height: 20px;
+        }
+    }
+}
+
+export component Loaders inherits Window {
+    width: 200px;
+    height: 160px;
+    background: #ffffff;
+    var in-out <bool> plain;
+    var in-out <bool> showing: true;
+    var in-out <string> heading: "page";
+    var out <bool> page-loaded: page.loaded;
+    var in-out <component> row-kind: Card;
+    var out <bool> is-card: row-kind == Card;
+
+    VerticalLayout {
+        padding: 4px;
+        spacing: 4px;
+        page := Loader {
+            source: plain ? Plain : Card;
+            active: showing;
+            label: heading;
+            height: 30px;
+        }
+        rows := Rows {
+            delegate: root.row-kind;
+            items: ["one", "two", "three"];
+        }
+        TouchArea {
+            height: 20px;
+            clicked => {
+                root.plain = !root.plain;
+                root.heading = "clicked";
+                root.row-kind = root.row-kind == Card ? Plain : Card;
+            }
+        }
+    }
+}

@@ -1,0 +1,142 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+import { Palette } from "palette.zge";
+import { Style } from "style.zge";
+import { ScrollView } from "scrollview.zge";
+
+// A scrolling list of strings with a current item. The up and down arrow
+// keys move it when the list has focus. With `selection-mode: extended`,
+// the user selects several items as on desktops (Ctrl- or Cmd-click adds
+// or removes one, Shift-click or Shift and the arrows a range, Ctrl+A or
+// Cmd+A all); with `multiple`, each click (or Space) adds or removes one.
+// `selected-items` are the items selected (in `single` mode, the current
+// one).
+export component StandardListView inherits ScrollView {
+    var in <[string]> model;
+    var in-out <int> current-item: -1;
+    var in <SelectionMode> selection-mode: single;
+    var out <[int]> selected-items: sel.selected-rows;
+    // Called when the user makes an item current.
+    callback current-item-changed(int);
+    // Called when the items selected change.
+    callback selection-changed();
+
+    accessible-role: list;
+    accessible-multiselectable: root.selection-mode != SelectionMode.single;
+
+    public function set-current-item(i: int) {
+        if i >= 0 && i < root.model.length && i != root.current-item {
+            root.current-item = i;
+            // Keep it in view.
+            if i * 34px < 0px - root.viewport-y {
+                root.viewport-y = 0px - i * 34px;
+            }
+            if (i + 1) * 34px > root.visible-height - root.viewport-y {
+                root.viewport-y = root.visible-height - (i + 1) * 34px;
+            }
+            root.current-item-changed(i);
+        }
+    }
+    public function select-all() { if root.selection-mode != SelectionMode.single { sel.select-all(); } }
+    public function clear-selection() { sel.clear(); }
+    public function set-selected(i: int, on: bool) {
+        if root.selection-mode == SelectionMode.single {
+            if on { root.current-item = i; } else if i == root.current-item { root.current-item = -1; }
+        } else {
+            sel.set-selected(i, on);
+        }
+    }
+    // A click on item `i`, or a key moving to it: with Shift (`extend`) or
+    // Ctrl or Cmd (`toggle`) held.
+    function pick(i: int, extend: bool, toggle: bool) {
+        if i < 0 || i >= root.model.length { return; }
+        if root.selection-mode == SelectionMode.extended && extend {
+            sel.extend-to(i);
+        } else if root.selection-mode == SelectionMode.multiple || (root.selection-mode == SelectionMode.extended && toggle) {
+            sel.toggle(i);
+        } else {
+            sel.select(i);
+        }
+        root.set-current-item(i);
+    }
+    // The arrow keys: the current item moves (selected, unless in
+    // `multiple` mode; Shift extends the selection).
+    function move-to(i: int, extend: bool) {
+        if i < 0 || i >= root.model.length { return; }
+        if root.selection-mode == SelectionMode.multiple {
+            root.set-current-item(i);
+        } else {
+            root.pick(i, extend, false);
+        }
+    }
+
+    // In `single` mode, the current item is the selection.
+    changed current-item => {
+        if root.selection-mode == SelectionMode.single { sel.select(root.current-item); }
+    }
+    sel := Selection {
+        count: root.model.length;
+        changed => { root.selection-changed(); }
+    }
+
+    ListLayout {
+        viewport-y: root.viewport-y;
+        visible-height: root.visible-height;
+        row-height: 34px;
+        for entry[i] in root.model : Rectangle {
+            height: 34px;
+            accessible-role: list-item;
+            accessible-label: entry;
+            accessible-checked: sel.selected[i];
+            accessible-action-default => { root.pick(i, false, false); }
+            accessible-action-select => {
+                sel.select(i);
+                root.set-current-item(i);
+            }
+            accessible-action-set-selected(on) => { root.set-selected(i, on); }
+            background: sel.selected[i] ? Palette.selection-background
+                : row-touch.has-hover ? Palette.control-hover : #00000000;
+            Text {
+                x: 12px;
+                width: parent.width - 24px;
+                text: entry;
+                overflow: elide;
+                font-size: Style.font-size;
+                vertical-alignment: center;
+                color: Palette.foreground;
+            }
+            row-touch := TouchArea {
+                clicked => {
+                    keys.focus();
+                    root.pick(i, self.modifiers.shift, self.modifiers.control || self.modifiers.meta);
+                }
+            }
+        }
+    }
+    keys := FocusScope {
+        x: 0px;
+        y: 0px;
+        width: 0px;
+        height: 0px;
+        key-pressed(event) => {
+            if event.text == Key.UpArrow {
+                root.move-to(max(0, root.current-item - 1), event.modifiers.shift);
+                return accept;
+            }
+            if event.text == Key.DownArrow {
+                root.move-to(root.current-item + 1, event.modifiers.shift);
+                return accept;
+            }
+            if event.text == Key.Space && root.selection-mode != SelectionMode.single {
+                sel.toggle(root.current-item);
+                return accept;
+            }
+            if (event.text == "a" || event.text == "A") && (event.modifiers.control || event.modifiers.meta) && root.selection-mode != SelectionMode.single {
+                sel.select-all();
+                return accept;
+            }
+            return reject;
+        }
+    }
+}

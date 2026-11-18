@@ -1,0 +1,78 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// A 3D scene: compared interpreted and compiled (tests/interpreter_test.zig).
+
+export component Scene inherits Window {
+    width: 240px;
+    height: 180px;
+    background: #f1f5f9;
+    var in-out <int> turns: 0;
+
+    View3D {
+        background: #0f172a;
+        ambient: #334155;
+        PerspectiveCamera {
+            position-y: 1.5;
+            position-z: 5;
+            pitch: -15;
+            field-of-view: 40;
+        }
+        DirectionalLight {
+            pitch: -40;
+            yaw: -30;
+        }
+        // Going round with each click.
+        Node {
+            yaw: root.turns * 45;
+            PointLight {
+                position-x: 2;
+                position-y: 1;
+                position-z: 2;
+                color: #fbbf24;
+                brightness: 0.8;
+            }
+        }
+        floor := Model {
+            mesh: plane;
+            pitch: -90;
+            position-y: -0.6;
+            size-x: 6;
+            size-y: 6;
+            color: #64748b;
+            roughness: 0.9;
+        }
+        box := Model {
+            mesh: cube;
+            position-x: -0.9;
+            yaw: 30 + root.turns * 20;
+            animate yaw { duration: 200ms; }
+            color: #ef4444;
+            roughness: 0.4;
+            clicked => { root.turns += 1; }
+            // On its top, turning with it.
+            Model {
+                mesh: sphere;
+                position-y: 0.75;
+                size-x: 0.5;
+                size-y: 0.5;
+                size-z: 0.5;
+                color: #22c55e;
+            }
+        }
+        ball := Model {
+            mesh: sphere;
+            position-x: 0.9;
+            color: #3b82f6;
+            metallic: 0.6;
+            roughness: 0.25;
+        }
+        // A glTF model: a ring with a textured box on it.
+        Model {
+            source: @model-url("../../examples/models/ring.glb");
+            position-z: 1;
+            position-y: -0.2;
+            yaw: root.turns * 30;
+        }
+    }
+}

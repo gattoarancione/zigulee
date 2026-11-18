@@ -1,0 +1,53 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// Sizes and shapes of the material style (colors are in palette.zge).
+
+export global Style {
+    // Text.
+    var out <length> font-size: 14px;
+    // Buttons, combo boxes, spin boxes, line edits.
+    var out <length> control-height: 40px;
+    var out <length> control-radius: 4px;
+    var out <length> button-radius: 20px;
+    var out <length> button-border-width: 1px;
+    // The focus ring: its width and distance from the control.
+    var out <length> focus-ring-width: 3px;
+    var out <length> focus-ring-offset: 2px;
+    // Text fields: border, and an accent underline when focused (0: none).
+    var out <length> input-border-width: 1px;
+    var out <length> input-focus-border-width: 2px;
+    var out <length> input-underline: 0px;
+    // Check boxes.
+    var out <length> check-size: 18px;
+    var out <length> check-radius: 2px;
+    var out <length> check-border-width: 2px;
+    // Switches: the track, and the knob when off, on, hovered.
+    var out <length> switch-width: 52px;
+    var out <length> switch-height: 32px;
+    var out <length> switch-radius: 16px;
+    var out <length> switch-border-width: 2px;
+    var out <length> switch-knob-off: 16px;
+    var out <length> switch-knob-on: 24px;
+    var out <length> switch-knob-grow: 4px;
+    // Sliders: track, thumb and the dot in it.
+    var out <length> slider-track: 4px;
+    var out <length> slider-thumb: 20px;
+    var out <length> slider-thumb-border-width: 0px;
+    var out <length> slider-dot: 20px;
+    // Progress bars: their height, the track line and the bar.
+    var out <length> progress-height: 4px;
+    var out <length> progress-track: 4px;
+    var out <length> progress-bar: 4px;
+    // Shadows under buttons, combo boxes and check boxes (fluent: a darker
+    // bottom edge), and under switch knobs and slider thumbs.
+    var out <length> control-shadow-y: 0px;
+    var out <length> control-shadow-blur: 0px;
+    var out <length> knob-shadow-y: 0px;
+    var out <length> knob-shadow-blur: 0px;
+    // Popups, cards and tabs.
+    var out <length> popup-radius: 4px;
+    var out <length> card-radius: 16px;
+    // The selected tab's indicator (0: the tab's whole width).
+    var out <length> tab-indicator-width: 0px;
+}

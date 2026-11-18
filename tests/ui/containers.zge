@@ -1,0 +1,61 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+import { ScrollView, ListView, TabWidget, SpinBox, Spinner, ProgressIndicator, Button, Palette } from "std-widgets.zge";
+
+// A component with `@children` inside a layout.
+component Card inherits Rectangle {
+    var in <string> heading;
+    border-width: 1px;
+    border-color: #888;
+    VerticalLayout {
+        padding: 4px;
+        spacing: 2px;
+        Text { text: root.heading; font-weight: 700; }
+        @children
+    }
+}
+
+export component Containers inherits Window {
+    width: 320px;
+    height: 420px;
+    background: Palette.background;
+    var in-out <int> tab;
+    var in-out <int> amount: 5;
+    var in-out <int> picked: -1;
+    var in-out <int> pages: 20;
+    var out <length> list-height: list.viewport-height;
+    var in-out <length> list-scroll <=> list.viewport-y;
+
+    VerticalLayout {
+        padding: 10px;
+        spacing: 8px;
+        card := Card {
+            heading: "Card";
+            first := Text { text: "first"; }
+            second := Text { text: "second"; }
+        }
+        list := ListView {
+            height: 110px;
+            for i in root.pages : Rectangle {
+                height: 24px;
+                background: i == root.picked ? #cde : transparent;
+                Text { x: 8px; text: "Row \{i}"; vertical-alignment: center; }
+                TouchArea { clicked => { root.picked = i; } }
+            }
+        }
+        tabs := TabWidget {
+            height: 100px;
+            tabs: ["One", "Two", "Three"];
+            current-index <=> root.tab;
+            if root.tab == 0 : Text { text: "Page one"; }
+            if root.tab == 1 : Text { text: "Page two"; }
+        }
+        HorizontalLayout {
+            spacing: 8px;
+            spin := SpinBox { value <=> root.amount; minimum: 0; maximum: 10; }
+            Spinner { width: 24px; }
+        }
+        ProgressIndicator { indeterminate: true; }
+    }
+}

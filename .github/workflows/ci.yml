@@ -1,0 +1,106 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    strategy:
+      # Every platform reports, even when another fails.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+      - run: zig build test --summary all
+      - run: zig build examples
+      - run: zig build check-mcu
+      # Direct3D 12 (skipped where the machine has no Direct3D 12 device).
+      - if: runner.os == 'Windows'
+        run: zig build test-d3d12 --summary all
+      # Screen reader support (UI Automation).
+      - if: runner.os == 'Windows'
+        run: zig build test-uia --summary all
+      # The native Windows backend, and the examples on it.
+      - if: runner.os == 'Windows'
+        run: zig build test-windows --summary all
+      - if: runner.os == 'Windows'
+        run: zig build examples -Dbackend=windows
+      # Screen reader support (AT-SPI), on a private session bus. The steps
+      # that may install packages have a time limit: an unreachable package
+      # server otherwise keeps apt retrying for over an hour.
+      - if: runner.os == 'Linux'
+        timeout-minutes: 10
+        run: |
+          command -v dbus-run-session || (sudo apt-get update && sudo apt-get install -y dbus-daemon dbus-bin)
+          dbus-run-session -- zig build test-atspi --summary all
+      # The native X11 backend, on a virtual X server (24-bit: xvfb-run's
+      # default screen is 8-bit), and the examples on it.
+      - if: runner.os == 'Linux'
+        timeout-minutes: 10
+        run: |
+          command -v xvfb-run || (sudo apt-get update && sudo apt-get install -y xvfb)
+          xvfb-run -a -s "-screen 0 1280x1024x24" zig build test-x11 --summary all
+          zig build examples -Dbackend=x11
+      # Web views with WebKitGTK, on a virtual X server (skipped when it
+      # cannot be installed).
+      - if: runner.os == 'Linux'
+        timeout-minutes: 10
+        run: |
+          if ! sudo timeout 300 sh -c 'apt-get update && apt-get install -y libwebkit2gtk-4.1-0'; then
+            echo "::warning::no WebKitGTK: web view tests skipped"
+            exit 0
+          fi
+          xvfb-run -a -s "-screen 0 1280x1024x24" zig build test-webkitgtk --summary all
+      # The native Wayland backend, on a headless Weston, and the examples
+      # on it (skipped when Weston cannot be installed: the package servers
+      # are sometimes unreachable from the runner).
+      - if: runner.os == 'Linux'
+        timeout-minutes: 10
+        run: |
+          if ! command -v weston && ! sudo timeout 300 sh -c 'apt-get update && apt-get install -y weston'; then
+            echo "::warning::no weston: Wayland tests skipped"
+            exit 0
+          fi
+          export XDG_RUNTIME_DIR=$(mktemp -d)
+          chmod 700 "$XDG_RUNTIME_DIR"
+          weston --backend=headless --socket=wayland-zigulee --idle-time=0 &
+          for i in $(seq 100); do [ -S "$XDG_RUNTIME_DIR/wayland-zigulee" ] && break; sleep 0.1; done
+          WAYLAND_DISPLAY=wayland-zigulee zig build test-wayland --summary all
+          zig build examples -Dbackend=wayland
+      # The KMS backend, on the kernel's virtual display (vkms) when the
+      # runner's kernel has it (else its display test is skipped).
+      - if: runner.os == 'Linux'
+        timeout-minutes: 10
+        run: |
+          sudo modprobe vkms || (sudo timeout 300 sh -c 'apt-get update && apt-get install -y "linux-modules-extra-$(uname -r)"' && sudo modprobe vkms) || echo "no vkms"
+          ls -l /dev/dri || true
+          sudo chmod 666 /dev/dri/card* || true
+          zig build test-kms --summary all
+          zig build examples -Dbackend=kms
+      # The fbdev backend, on the kernel's virtual framebuffer (vfb) when
+      # the runner's kernel has it (else its screen test is skipped).
+      - if: runner.os == 'Linux'
+        timeout-minutes: 10
+        run: |
+          sudo modprobe vfb vfb_enable=1 videomemorysize=4194304 mode_option=640x480-32 || echo "no vfb"
+          ls -l /dev/fb* || true
+          dev=$(for f in /sys/class/graphics/fb*; do grep -q "Virtual FB" $f/name 2>/dev/null && echo /dev/$(basename $f); done | head -1)
+          [ -n "$dev" ] && sudo chmod 666 "$dev" && export ZIGULEE_FB_DEVICE="$dev"
+          zig build test-fbdev --summary all
+          zig build examples -Dbackend=fbdev
+
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+      - run: zig fmt --check build.zig src examples tools tests

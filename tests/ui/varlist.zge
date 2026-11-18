@@ -1,0 +1,27 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// A list whose rows are as tall as their text wraps: short and long
+// messages, one under another, only those in view with instances.
+import { ListView } from "std-widgets.zge";
+
+export component Messages inherits Window {
+    width: 200px;
+    height: 200px;
+    var in-out <[string]> messages: [
+        "Hi", "A longer message that wraps over several lines of the list", "Ok",
+        "Short", "Another rather long one, two or three lines at this width", "Yes",
+        "No", "Fine", "One more message that takes a few lines to show", "End",
+    ];
+    var out <length> content: list.viewport-height;
+    list := ListView {
+        width: 200px;
+        height: 200px;
+        variable-row-height: true;
+        for m in root.messages : Text {
+            text: m;
+            wrap: word-wrap;
+            font-size: 14px;
+        }
+    }
+}

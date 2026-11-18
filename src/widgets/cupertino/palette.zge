@@ -1,0 +1,53 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// Colors of the cupertino style (macOS). Set `Palette.dark` to switch to
+// dark mode.
+
+export global Palette {
+    var in-out <bool> dark;
+
+    var out <color> background: dark ? #323232 : #ececec;
+    var out <color> foreground: dark ? #e5e5e5 : #262626;
+    var out <color> alternate-background: dark ? #2a2a2a : #ffffff;
+    var out <color> secondary-foreground: dark ? #a5a5a5 : #808080;
+    var out <color> disabled-foreground: dark ? #6a6a6a : #b8b8b8;
+
+    var out <color> control-background: dark ? #5a5a5c : #ffffff;
+    var out <color> control-hover: dark ? #636365 : #fafafa;
+    var out <color> control-pressed: dark ? #6e6e70 : #e6e6e6;
+    var out <color> control-disabled: dark ? #3a3a3c : #f5f5f5;
+    var out <color> border: dark ? #ffffff1a : #0000001f;
+    // Outlines of unchecked toggles and the empty part of tracks.
+    var out <color> strong-border: dark ? #ffffff40 : #00000040;
+    var out <color> track: dark ? #5a5a5c : #dadada;
+
+    var out <color> accent-background: dark ? #0a84ff : #007aff;
+    var out <color> accent-hover: dark ? #2a93ff : #1a86ff;
+    var out <color> accent-pressed: dark ? #0071e0 : #0062cc;
+    var out <color> accent-foreground: #ffffff;
+
+    // A glow of the accent around the focused control.
+    var out <color> focus-ring: dark ? #0a84ff80 : #007aff80;
+
+    // Text fields.
+    var out <color> input-background: dark ? #3a3a3c : #ffffff;
+    var out <color> input-focused-background: dark ? #3a3a3c : #ffffff;
+    var out <color> selection-background: dark ? #3f638b : #b3d7ff;
+    var out <color> placeholder-foreground: dark ? #ffffff40 : #00000040;
+    var out <color> input-focus-border: dark ? #0a84ff80 : #007aff80;
+    var out <color> slider-thumb: dark ? #cdcdcd : #ffffff;
+
+    // Switches: the track when off, the knob off and on (always white).
+    var out <color> switch-track: dark ? #4a4a4c : #e3e3e3;
+    var out <color> switch-track-hover: dark ? #545456 : #dadada;
+    var out <color> switch-knob: dark ? #e5e5e5 : #ffffff;
+    var out <color> switch-knob-checked: #ffffff;
+    // Shadows (see Style's): under controls, under knobs.
+    var out <color> control-shadow: dark ? #00000066 : #00000030;
+    var out <color> knob-shadow: dark ? #00000080 : #00000040;
+
+    // Scroll bars and tabs.
+    var out <color> scrollbar: dark ? #ffffff40 : #00000040;
+    var out <color> scrollbar-hover: dark ? #ffffff80 : #00000080;
+}

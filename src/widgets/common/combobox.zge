@@ -1,0 +1,151 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+import { Palette } from "palette.zge";
+import { Style } from "style.zge";
+
+// A drop-down choice among `model`. Click (or Space, Return) opens the
+// list; the up and down arrows change the choice without opening it.
+export component ComboBox inherits Rectangle {
+    var in <[string]> model;
+    var in-out <int> current-index;
+    var out <string> current-value: current-index >= 0 && current-index < model.length ? model[current-index] : "";
+    var in <bool> enabled: true;
+    var out <bool> has-focus: fs.has-focus;
+    // Called when the user picks an entry.
+    callback selected(string);
+
+    accessible-role: combobox;
+    accessible-value: root.current-value;
+    accessible-enabled: root.enabled;
+    accessible-action-default => { root.open(); }
+
+    public function open() {
+        if root.enabled {
+            fs.focus();
+            popup.show();
+        }
+    }
+    function pick(i: int) {
+        if i >= 0 && i < root.model.length && i != root.current-index {
+            root.current-index = i;
+            root.selected(root.current-value);
+        }
+    }
+
+    min-width: 64px;
+    min-height: Style.control-height;
+    preferred-width: 160px;
+    preferred-height: Style.control-height;
+    max-height: Style.control-height;
+    border-radius: Style.control-radius;
+    border-width: 1px;
+    border-color: Palette.border;
+    background: !enabled ? Palette.control-disabled
+        : touch.pressed ? Palette.control-pressed : touch.has-hover ? Palette.control-hover : Palette.control-background;
+    drop-shadow-offset-y: Style.control-shadow-y;
+    drop-shadow-blur: Style.control-shadow-blur;
+    drop-shadow-color: root.enabled ? Palette.control-shadow : #00000000;
+
+    Rectangle {
+        x: 0px - Style.focus-ring-offset;
+        y: 0px - Style.focus-ring-offset;
+        width: parent.width + 2 * Style.focus-ring-offset;
+        height: parent.height + 2 * Style.focus-ring-offset;
+        border-radius: Style.control-radius + Style.focus-ring-offset;
+        border-width: Style.focus-ring-width;
+        border-color: Palette.focus-ring;
+        visible: fs.has-focus;
+    }
+    Text {
+        x: 11px;
+        width: parent.width - 40px;
+        text: root.current-value;
+        overflow: elide;
+        font-size: Style.font-size;
+        vertical-alignment: center;
+        color: root.enabled ? Palette.foreground : Palette.disabled-foreground;
+    }
+    Path {
+        x: parent.width - 22px;
+        y: (parent.height - 5px) / 2;
+        width: 10px;
+        height: 5px;
+        commands: "M 0 0 L 5 5 L 10 0";
+        stroke: root.enabled ? Palette.secondary-foreground : Palette.disabled-foreground;
+        stroke-width: 1.2px;
+    }
+    fs := FocusScope {
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if event.text == Key.UpArrow {
+                root.pick(root.current-index - 1);
+                return accept;
+            }
+            if event.text == Key.DownArrow {
+                root.pick(root.current-index + 1);
+                return accept;
+            }
+            if event.text == Key.Space || event.text == Key.Return {
+                root.open();
+                return accept;
+            }
+            return reject;
+        }
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.open(); }
+    }
+    popup := PopupWindow {
+        x: 0px;
+        y: root.height + 2px;
+        width: root.width;
+        height: min(root.model.length * 32px + 10px, 266px);
+
+        Rectangle {
+            border-radius: Style.popup-radius;
+            border-width: 1px;
+            border-color: Palette.border;
+            background: Palette.alternate-background;
+            clip: true;
+            Flickable {
+                x: 4px;
+                y: 4px;
+                width: parent.width - 8px;
+                height: parent.height - 8px;
+                VerticalLayout {
+                    alignment: start;
+                    for entry[i] in root.model : Rectangle {
+                        height: 32px;
+                        border-radius: Style.control-radius;
+                        background: row-touch.pressed ? Palette.control-pressed
+                            : row-touch.has-hover ? Palette.control-hover
+                            : i == root.current-index ? Palette.selection-background : #00000000;
+                        Rectangle {
+                            visible: i == root.current-index;
+                            x: 0px;
+                            y: (parent.height - 16px) / 2;
+                            width: 3px;
+                            height: 16px;
+                            border-radius: 1.5px;
+                            background: Palette.accent-background;
+                        }
+                        Text {
+                            x: 11px;
+                            width: parent.width - 22px;
+                            text: entry;
+                            overflow: elide;
+                            font-size: Style.font-size;
+                            vertical-alignment: center;
+                            color: Palette.foreground;
+                        }
+                        row-touch := TouchArea {
+                            clicked => { root.pick(i); }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

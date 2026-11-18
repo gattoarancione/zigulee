@@ -1,0 +1,53 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// Video: a VideoPlayer (std-widgets.zge) with its controls, playing an
+// animated PNG embedded in the program (examples/video/demo.png, drawn by
+// tools/video_demo.zig: `zig build video-demo`), or a video file given on
+// the command line (`zig build run-video -- movie.mp4`: MP4 and the like
+// play where the platform decodes them, with their sound).
+
+import { VideoPlayer, Button, CheckBox, Palette } from "std-widgets.zge";
+
+export component VideoDemo inherits Window {
+    title: "zigulee video";
+    width: 640px;
+    height: 440px;
+    background: Palette.background;
+
+    // A file to play instead of the clip.
+    var in <string> file;
+
+    VerticalLayout {
+        padding: 12px;
+        spacing: 10px;
+
+        player := VideoPlayer {
+            source: @video-url("video/demo.png");
+            source-file: root.file;
+            loop: loop.checked;
+            playing: true;
+            vertical-stretch: 1;
+        }
+
+        HorizontalLayout {
+            spacing: 10px;
+            Button {
+                text: "Restart";
+                horizontal-stretch: 0;
+                clicked => { player.play(); }
+            }
+            loop := CheckBox {
+                text: "Loop";
+                horizontal-stretch: 0;
+                checked: true;
+            }
+            Text {
+                text: root.file == "" ? "A clip drawn by tools/video_demo.zig" : root.file;
+                color: Palette.secondary-foreground;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+            }
+        }
+    }
+}
