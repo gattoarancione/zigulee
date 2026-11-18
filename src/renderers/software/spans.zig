@@ -180,7 +180,7 @@ fn storeRgba(dst: anytype, s: Px(dst.len), comptime checks: Checks) void {
         return;
     }
     const d: Px(n) = @bitCast(dst.*);
-    dst.* = @bitCast(s + mul8V(4 * n, d, @as(Px(n), @splat(255)) - a));
+    dst.* = @bitCast(s +| mul8V(4 * n, d, @as(Px(n), @splat(255)) - a));
 }
 
 // ---- RGB565: n pixels as four planes (reds, greens, blues, alphas) ----
@@ -307,7 +307,7 @@ fn store(comptime P: type, dst: anytype, s: Planes(dst.len), comptime checks: Ch
             }
             const d = split(n, @bitCast(dst.*));
             var out: Planes(n) = undefined;
-            inline for (channels) |ch| @field(out, ch) = @field(s, ch) + mul8V(n, @field(d, ch), inv);
+            inline for (channels) |ch| @field(out, ch) = @field(s, ch) +| mul8V(n, @field(d, ch), inv);
             dst.* = @bitCast(join(n, out));
         },
         Rgb565 => {
@@ -320,9 +320,9 @@ fn store(comptime P: type, dst: anytype, s: Planes(dst.len), comptime checks: Ch
                 const r: W = (d >> @splat(11)) & @as(W, @splat(0x1f));
                 const g: W = (d >> @splat(5)) & @as(W, @splat(0x3f));
                 const b: W = d & @as(W, @splat(0x1f));
-                out.r += mul8V(n, @truncate((r << @splat(3)) | (r >> @splat(2))), inv);
-                out.g += mul8V(n, @truncate((g << @splat(2)) | (g >> @splat(4))), inv);
-                out.b += mul8V(n, @truncate((b << @splat(3)) | (b >> @splat(2))), inv);
+                out.r +|= mul8V(n, @truncate((r << @splat(3)) | (r >> @splat(2))), inv);
+                out.g +|= mul8V(n, @truncate((g << @splat(2)) | (g >> @splat(4))), inv);
+                out.b +|= mul8V(n, @truncate((b << @splat(3)) | (b >> @splat(2))), inv);
             }
             const ro: W = out.r;
             const go: W = out.g;
@@ -390,4 +390,25 @@ test "rows blended at once: the pixels blended one by one" {
         scaleCoverage(&k, 77);
         for (k, coverage) |got, c| try testing.expectEqual(mul8(c, 77), got);
     }
+}
+
+test "pixels not premultiplied: saturated, not overflowing, as one by one" {
+    var prng: std.Random.DefaultPrng = .init(11);
+    const r = prng.random();
+    for (0..50) |_| {
+        // Straight alpha: channels above their alpha.
+        var src: [37]Rgba8 = undefined;
+        for (&src) |*p| p.* = .{ .r = r.int(u8) | 0x80, .g = r.int(u8), .b = r.int(u8) | 0x80, .a = r.int(u8) >> 1 };
+        var dst: [37]Rgba8 = undefined;
+        for (&dst) |*p| p.* = .{ .r = r.int(u8), .g = r.int(u8), .b = r.int(u8), .a = 255 };
+        var dst565: [37]Rgb565 = undefined;
+        for (&dst565) |*p| p.* = @bitCast(r.int(u16));
+        var coverage: [37]u8 = undefined;
+        for (&coverage) |*k| k.* = r.int(u8);
+        try checkRows(Rgba8, &dst, &src, &coverage, src[0]);
+        try checkRows(Rgb565, &dst565, &src, &coverage, src[0]);
+    }
+    var white: [8]Rgba8 = @splat(.{ .r = 255, .g = 255, .b = 255, .a = 255 });
+    blendRow(Rgba8, &white, &@as([8]Rgba8, @splat(.{ .r = 255, .g = 0, .b = 255, .a = 128 })), 255);
+    try testing.expectEqual(Rgba8{ .r = 255, .g = 127, .b = 255, .a = 255 }, white[0]);
 }

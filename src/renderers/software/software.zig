@@ -50,16 +50,18 @@ pub const Rgb565 = packed struct(u16) {
     }
 };
 
-/// Composites premultiplied `src` over `dst`.
+/// Composites premultiplied `src` over `dst`. A pixel that is not
+/// premultiplied (a channel above its alpha: straight-alpha pixels an app
+/// made) saturates at 255, as a GPU clamps it, instead of overflowing.
 pub fn blend(comptime P: type, dst: *P, src: Rgba8) void {
     if (src.a == 0 and src.r == 0 and src.g == 0 and src.b == 0) return;
     const inv = 255 - src.a;
     switch (P) {
         Rgba8 => dst.* = .{
-            .r = src.r + mul8(dst.r, inv),
-            .g = src.g + mul8(dst.g, inv),
-            .b = src.b + mul8(dst.b, inv),
-            .a = src.a + mul8(dst.a, inv),
+            .r = src.r +| mul8(dst.r, inv),
+            .g = src.g +| mul8(dst.g, inv),
+            .b = src.b +| mul8(dst.b, inv),
+            .a = src.a +| mul8(dst.a, inv),
         },
         Rgb565 => {
             if (src.a == 255) {
@@ -67,7 +69,7 @@ pub fn blend(comptime P: type, dst: *P, src: Rgba8) void {
                 return;
             }
             const d = dst.toRgb8();
-            dst.* = .fromRgb8(src.r + mul8(d[0], inv), src.g + mul8(d[1], inv), src.b + mul8(d[2], inv));
+            dst.* = .fromRgb8(src.r +| mul8(d[0], inv), src.g +| mul8(d[1], inv), src.b +| mul8(d[2], inv));
         },
         else => @compileError("unsupported pixel type " ++ @typeName(P)),
     }
