@@ -1325,8 +1325,11 @@ pub const TextCache = struct {
             c.glyphs.shrinkRetainingCapacity(start);
             return err;
         };
+        // Reserved whole once (it starts again before going past it): the
+        // keys' texts point into it, so it must never move.
+        try c.texts.ensureTotalCapacityPrecise(gpa, max_bytes);
         const text_start = c.texts.items.len;
-        try c.texts.appendSlice(gpa, s.text);
+        c.texts.appendSliceAssumeCapacity(s.text);
         const run: Run = .{ .start = @intCast(start), .len = @intCast(c.glyphs.items.len - start), .lines = lines };
         // The key's text: the copy (the item's may change in place).
         try c.map.put(gpa, Key.of(cmd, c.texts.items[text_start..]), run);
@@ -1875,6 +1878,48 @@ test "texts laid out once: the glyphs placeGlyphs places, kept while nothing tha
     defer direct.deinit(gpa);
     try Direct.of(&cases[0], all, &direct);
     try testing.expectEqualSlices(Placed, direct.items, new[1]);
+}
+
+test "texts laid out once: many texts, all still found (their copies never move)" {
+    // Freed memory overwritten, and buffers never grown in place: a key
+    // left pointing into a buffer that moved no longer hashes as its text.
+    const Poisoning = struct {
+        child: Allocator,
+        fn allocator(p: *@This()) Allocator {
+            return .{ .ptr = p, .vtable = &.{ .alloc = alloc, .resize = Allocator.noResize, .remap = Allocator.noRemap, .free = free } };
+        }
+        fn alloc(ctx: *anyopaque, len: usize, a: std.mem.Alignment, ra: usize) ?[*]u8 {
+            const p: *@This() = @ptrCast(@alignCast(ctx));
+            return p.child.rawAlloc(len, a, ra);
+        }
+        fn free(ctx: *anyopaque, buf: []u8, a: std.mem.Alignment, ra: usize) void {
+            const p: *@This() = @ptrCast(@alignCast(ctx));
+            @memset(buf, 0xaa);
+            p.child.rawFree(buf, a, ra);
+        }
+    };
+    var poisoning: Poisoning = .{ .child = testing.allocator };
+    const gpa = poisoning.allocator();
+    const bytes = try core.text.test_font.standard(testing.allocator);
+    defer testing.allocator.free(bytes);
+    const font: Font = try .init(bytes);
+    var cache: TextCache = .{};
+    defer cache.deinit(gpa);
+
+    const Cmd = Command.Draw(rendering.TextStyle);
+    var buf: [32]u8 = undefined;
+    const n = 300;
+    for (0..2) |round| for (0..n) |i| {
+        // The item's text in a buffer reused for the next one: the cache
+        // keeps its own copy.
+        const text = try std.fmt.bufPrint(&buf, "Room {d}", .{i});
+        const cmd: Cmd = .{ .rect = .{ .x = 0, .y = 0, .width = 80, .height = 20 }, .clip = .{ .width = 200, .height = 200 }, .opacity = 1, .style = .{ .text = text, .font = &font, .color = .{ .solid = .rgb(0) }, .font_size = 12 } };
+        const before = cache.glyphs.items.len;
+        _ = (try cache.get(gpa, &cmd)).?;
+        // The second time round, every one is found: none laid out again.
+        if (round == 1) try testing.expectEqual(before, cache.glyphs.items.len);
+    };
+    try testing.expectEqual(@as(u32, n), cache.map.count());
 }
 
 test "hinting puts the x-height on whole pixels" {
