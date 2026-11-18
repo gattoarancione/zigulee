@@ -339,6 +339,8 @@ fn pxp() !void {
         return;
     }
     const c = std.c;
+    // `mmap64` on glibc: its `mmap` takes a 32-bit offset on 32-bit targets.
+    const mmap = if (std.posix.lfs64_abi) c.mmap64 else c.mmap;
     const say = std.debug.print;
     // The device: the video node whose driver is imx-pxp.
     var fd: c.fd_t = -1;
@@ -437,7 +439,7 @@ fn pxp() !void {
             say("pxp: querybuf failed ({t}): stopped\n", .{e});
             return;
         }
-        const m = c.mmap(null, b.length, .{ .READ = true, .WRITE = true }, .{ .TYPE = .SHARED }, fd, @intCast(b.m));
+        const m = mmap(null, b.length, .{ .READ = true, .WRITE = true }, .{ .TYPE = .SHARED }, fd, @intCast(b.m));
         if (m == c.MAP_FAILED) {
             say("pxp: mmap failed: stopped\n", .{});
             return;

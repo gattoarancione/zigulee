@@ -37,6 +37,11 @@ pub const protocol = @import("protocol.zig");
 pub const xkb = @import("zigulee-xkb");
 const Arg = protocol.Conn.Arg;
 const c = std.c;
+/// `mmap` and `ftruncate` with a 64-bit offset, as `std.c` declares them:
+/// on 32-bit glibc the plain ones take a 32-bit offset, the `64` ones a
+/// 64-bit one (as `std.posix` picks).
+const mmap = if (std.posix.lfs64_abi) c.mmap64 else c.mmap;
+const ftruncate = if (std.posix.lfs64_abi) c.ftruncate64 else c.ftruncate;
 
 const log = std.log.scoped(.zigulee_wayland);
 
@@ -656,7 +661,7 @@ fn keyboardEvent(m: *protocol.Message) Error!void {
             defer _ = c.close(fd);
             if (format != 1 or size == 0) return;
             const k = if (a.keyboard) |*k| k else return;
-            const mem = c.mmap(null, size, .{ .READ = true }, .{ .TYPE = .PRIVATE }, fd, 0);
+            const mem = mmap(null, size, .{ .READ = true }, .{ .TYPE = .PRIVATE }, fd, 0);
             if (mem == c.MAP_FAILED) return;
             defer _ = c.munmap(@alignCast(mem), size);
             const bytes: [*]const u8 = @ptrCast(mem);
@@ -1048,11 +1053,11 @@ pub const Window = struct {
                 const size = @as(usize, w) * h * 4;
                 const fd = memfdCreate("zigulee", std.os.linux.MFD.CLOEXEC);
                 if (fd < 0) return error.Disconnected;
-                if (c.ftruncate(fd, @intCast(size)) != 0) {
+                if (ftruncate(fd, @intCast(size)) != 0) {
                     _ = c.close(fd);
                     return error.OutOfMemory;
                 }
-                const mem = c.mmap(null, size, .{ .READ = true, .WRITE = true }, .{ .TYPE = .SHARED }, fd, 0);
+                const mem = mmap(null, size, .{ .READ = true, .WRITE = true }, .{ .TYPE = .SHARED }, fd, 0);
                 if (mem == c.MAP_FAILED) {
                     _ = c.close(fd);
                     return error.OutOfMemory;

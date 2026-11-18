@@ -16,6 +16,9 @@ pub const Rotation = @import("zigulee-evdev").Rotation;
 const core = zigulee.core;
 const Rgba8 = core.Rgba8;
 const c = std.c;
+/// `mmap` with a 64-bit offset, as `std.c` declares it: on 32-bit glibc
+/// `mmap` takes a 32-bit one and `mmap64` the 64-bit (as `std.posix` picks).
+const mmap = if (std.posix.lfs64_abi) c.mmap64 else c.mmap;
 
 const log = std.log.scoped(.zigulee_fbdev);
 
@@ -392,7 +395,7 @@ pub const Screen = struct {
         }
         if (s.pages == 1) s.origin = @as(usize, v.yoffset) * f.line_length + @as(usize, v.xoffset) * format.bytes;
         if (s.origin + page > f.smem_len) return error.NoDevice;
-        const mem = c.mmap(null, f.smem_len, .{ .READ = true, .WRITE = true }, .{ .TYPE = .SHARED }, fd, 0);
+        const mem = mmap(null, f.smem_len, .{ .READ = true, .WRITE = true }, .{ .TYPE = .SHARED }, fd, 0);
         if (mem == c.MAP_FAILED) return error.OutOfMemory;
         s.memory = @as([*]u8, @ptrCast(mem))[0..f.smem_len];
         s.mapped = true;

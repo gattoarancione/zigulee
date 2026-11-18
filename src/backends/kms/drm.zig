@@ -8,6 +8,9 @@
 
 const std = @import("std");
 const c = std.c;
+/// `mmap` with a 64-bit offset, as `std.c` declares it: on 32-bit glibc
+/// `mmap` takes a 32-bit one and `mmap64` the 64-bit (as `std.posix` picks).
+const mmap = if (std.posix.lfs64_abi) c.mmap64 else c.mmap;
 
 const log = std.log.scoped(.zigulee_kms);
 
@@ -270,7 +273,7 @@ pub const Buffer = struct {
         var map: MapDumb = .{ .handle = dumb.handle };
         if (!call(fd, ioc.map_dumb, &map)) return error.OutOfMemory;
         const size: usize = @intCast(dumb.size);
-        const mem = c.mmap(null, size, .{ .READ = true, .WRITE = true }, .{ .TYPE = .SHARED }, fd, @intCast(map.offset));
+        const mem = mmap(null, size, .{ .READ = true, .WRITE = true }, .{ .TYPE = .SHARED }, fd, @intCast(map.offset));
         if (mem == c.MAP_FAILED) return error.OutOfMemory;
         b.memory = @as([*]align(std.heap.page_size_min) u8, @ptrCast(@alignCast(mem)))[0..size];
         @memset(b.memory, 0);
