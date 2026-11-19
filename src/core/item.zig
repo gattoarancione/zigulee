@@ -184,6 +184,10 @@ pub const Item = struct {
     /// Invisible items (and their children) are not drawn, do not receive
     /// input and cannot take focus. They still take space in layouts.
     visible: Property(bool) = .init(true),
+    /// Disabled items, and their children with them (`isEnabled`), take
+    /// no input and cannot take focus. They are drawn as they are: the
+    /// widgets grey themselves.
+    enabled: Property(bool) = .init(true),
     /// Applies to the item and its children.
     opacity: Property(f32) = .init(1),
 
@@ -208,6 +212,7 @@ pub const Item = struct {
         self.width.deinit();
         self.height.deinit();
         self.visible.deinit();
+        self.enabled.deinit();
         self.opacity.deinit();
         self.* = undefined;
     }
@@ -253,6 +258,21 @@ pub const Item = struct {
     pub fn isVisibleInTree(self: *Item) bool {
         var it: ?*Item = self;
         while (it) |i| : (it = i.parent) if (!i.visible.get()) return false;
+        return true;
+    }
+
+    /// True if this item and all its ancestors are enabled: what `.zge`
+    /// reads as its `enabled` (as QML's), while setting it sets the item's
+    /// own.
+    pub fn isEnabled(self: *Item) bool {
+        var it: ?*Item = self;
+        while (it) |i| : (it = i.parent) if (!i.enabled.get()) return false;
+        return true;
+    }
+
+    pub fn isEnabledUntracked(self: *Item) bool {
+        var it: ?*Item = self;
+        while (it) |i| : (it = i.parent) if (!i.enabled.getUntracked()) return false;
         return true;
     }
 
@@ -528,7 +548,8 @@ pub const Item = struct {
     }
 
     pub fn acceptsFocus(self: *Item) bool {
-        return if (self.vtable.acceptsFocus) |f| f(self) else false;
+        const f = self.vtable.acceptsFocus orelse return false;
+        return self.isEnabled() and f(self);
     }
 
     pub const ChildIterator = struct {

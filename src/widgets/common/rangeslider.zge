@@ -11,7 +11,6 @@ export component RangeSlider inherits Empty {
     var in <float> maximum: 100;
     // Values snap to multiples of `step` from `minimum` (0: no snapping).
     var in <float> step: 0;
-    var in <bool> enabled: true;
     var in-out <float> first-value: 25;
     var in-out <float> second-value: 75;
     // Called when the user changes either value.
@@ -134,7 +133,6 @@ export component Dial inherits Empty {
     var in <float> maximum: 100;
     // Values snap to multiples of `step` from `minimum` (0: no snapping).
     var in <float> step: 0;
-    var in <bool> enabled: true;
     var in-out <float> value;
     var out <bool> has-focus: fs.has-focus;
     // Called when the user changes the value.

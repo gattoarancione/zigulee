@@ -563,7 +563,6 @@ pub const TimerElement = struct {
 /// Turns pointer input into properties and callbacks.
 pub const TouchArea = struct {
     item: Item = .init(&vtable),
-    enabled: Property(bool) = .init(true),
     /// The pointer's shape over it.
     mouse_cursor: Property(input.MouseCursor) = .init(.default),
     pressed: Property(bool) = .init(false),
@@ -595,7 +594,6 @@ pub const TouchArea = struct {
     pub fn deinit(self: *TouchArea) void {
         self.item.deinit();
         self.mouse_cursor.deinit();
-        self.enabled.deinit();
         self.pressed.deinit();
         self.has_hover.deinit();
         self.mouse_x.deinit();
@@ -613,12 +611,12 @@ pub const TouchArea = struct {
 
     fn mouseCursor(i: *Item) input.MouseCursor {
         const self = parentOf(TouchArea, i);
-        return if (self.enabled.get()) self.mouse_cursor.get() else .default;
+        return if (self.item.isEnabled()) self.mouse_cursor.get() else .default;
     }
 
     fn inputEvent(i: *Item, event: input.PointerEvent, _: *Window) input.InputEventResult {
         const self = parentOf(TouchArea, i);
-        if (!self.enabled.get()) {
+        if (!self.item.isEnabled()) {
             self.has_hover.set(false);
             self.pressed.set(false);
             return .ignored;
@@ -684,7 +682,6 @@ pub const TouchArea = struct {
 /// a child handles the click) or via Tab navigation.
 pub const FocusScope = struct {
     item: Item = .init(&vtable),
-    enabled: Property(bool) = .init(true),
     has_focus: Property(bool) = .init(false),
     key_pressed: Callback(fn (input.KeyEvent) input.EventResult) = .{},
     key_released: Callback(fn (input.KeyEvent) input.EventResult) = .{},
@@ -692,7 +689,6 @@ pub const FocusScope = struct {
 
     pub fn deinit(self: *FocusScope) void {
         self.item.deinit();
-        self.enabled.deinit();
         self.has_focus.deinit();
     }
 
@@ -710,7 +706,7 @@ pub const FocusScope = struct {
     };
 
     fn acceptsFocus(i: *Item) bool {
-        return parentOf(FocusScope, i).enabled.get();
+        return i.isEnabled();
     }
 
     fn inputEvent(i: *Item, event: input.PointerEvent, w: *Window) input.InputEventResult {
@@ -720,7 +716,7 @@ pub const FocusScope = struct {
 
     fn keyEvent(i: *Item, kind: input.KeyEventKind, event: input.KeyEvent, _: *Window) input.EventResult {
         const self = parentOf(FocusScope, i);
-        if (!self.enabled.get()) return .reject;
+        if (!self.item.isEnabled()) return .reject;
         return switch (kind) {
             .pressed => self.key_pressed.call(.{event}),
             .released => self.key_released.call(.{event}),

@@ -10,7 +10,6 @@ import { Style } from "style.zge";
 export component TabWidget inherits Empty {
     var in <[string]> tabs;
     var in-out <int> current-index;
-    var in <bool> enabled: true;
     // Called when the user picks a tab.
     callback current-changed(int);
     public function select(i: int) {

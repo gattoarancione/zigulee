@@ -12,7 +12,9 @@ They are written in `.zge` ([src/widgets](../../src/widgets)) and come
 in three styles, chosen at build time: `fluent` (the default),
 `material` and `minimal`. The style changes their look (the `Palette`
 colors and `Style` sizes), not their properties. Besides the
-properties listed here, each has those of the element it inherits.
+properties listed here, each has those of the element it inherits,
+and those of every element: `visible` and `enabled` among them
+(disabled, a widget greys itself and takes no input).
 
 ## Button
 
@@ -21,7 +23,6 @@ Inherits `Rectangle`. A push button. `primary` uses the accent color. Space or R
 | Property | Type | Access | Default | Description |
 |---|---|---|---|---|
 | `text` | string | in |  |  |
-| `enabled` | bool | in | `true` |  |
 | `primary` | bool | in |  |  |
 | `pressed` | bool | out |  |  |
 | `has-hover` | bool | out |  |  |
@@ -38,7 +39,6 @@ Inherits `Empty`. A check box with a label. Space toggles it when it has keyboar
 | Property | Type | Access | Default | Description |
 |---|---|---|---|---|
 | `text` | string | in |  |  |
-| `enabled` | bool | in | `true` |  |
 | `checked` | bool | in-out |  |  |
 | `has-focus` | bool | out |  |  |
 | `has-hover` | bool | out |  |  |
@@ -54,7 +54,6 @@ Inherits `Empty`. An on/off toggle switch with a label.
 | Property | Type | Access | Default | Description |
 |---|---|---|---|---|
 | `text` | string | in |  |  |
-| `enabled` | bool | in | `true` |  |
 | `checked` | bool | in-out |  |  |
 | `has-focus` | bool | out |  |  |
 | `has-hover` | bool | out |  |  |
@@ -72,7 +71,6 @@ Inherits `Empty`. A horizontal slider. Drag the thumb or click the track; the ar
 | `minimum` | float | in | `0` |  |
 | `maximum` | float | in | `100` |  |
 | `step` | float | in | `0` | Values snap to multiples of `step` from `minimum` (0: no snapping). |
-| `enabled` | bool | in | `true` |  |
 | `value` | float | in-out |  |  |
 | `has-focus` | bool | out |  |  |
 
@@ -98,7 +96,6 @@ Inherits `Rectangle`. A single-line text field.
 | `text` | string | in-out |  |  |
 | `placeholder-text` | string | in |  | Shown while the text is empty. |
 | `font-size` | length | in | `Style.font-size` |  |
-| `enabled` | bool | in | `true` |  |
 | `read-only` | bool | in |  |  |
 | `input-type` | InputType | in |  | `password` shows bullets. |
 | `horizontal-alignment` | TextHorizontalAlignment | in | `left` | Where the text sits across the field (the placeholder too). |
@@ -126,7 +123,6 @@ Inherits `Rectangle`. A multi-line text field. It scrolls to keep the caret visi
 |---|---|---|---|---|
 | `text` | string | in-out |  |  |
 | `font-size` | length | in | `Style.font-size` |  |
-| `enabled` | bool | in | `true` |  |
 | `read-only` | bool | in |  |  |
 | `wrap` | TextWrap | in | `word-wrap` |  |
 | `horizontal-alignment` | TextHorizontalAlignment | in | `left` | Where each line sits across the field. |
@@ -151,7 +147,6 @@ Inherits `Rectangle`. A scrolling area with scroll bars. Its children are its co
 
 | Property | Type | Access | Default | Description |
 |---|---|---|---|---|
-| `enabled` | bool | in | `true` |  |
 | `viewport-x` | length | in-out |  |  |
 | `viewport-y` | length | in-out |  |  |
 | `viewport-width` | length | out |  |  |
@@ -194,7 +189,6 @@ Inherits `Rectangle`. A scroll bar on its own (for a Flickable, say): the part s
 | `vertical` | bool | in | `true` |  |
 | `size` | float | in | `0.25` |  |
 | `position` | float | in-out |  |  |
-| `enabled` | bool | in | `true` |  |
 
 Callbacks:
 
@@ -208,7 +202,6 @@ Inherits `Empty`. Tabs over a content area. The children are the content; show t
 |---|---|---|---|---|
 | `tabs` | [string] | in |  |  |
 | `current-index` | int | in-out |  |  |
-| `enabled` | bool | in | `true` |  |
 
 Callbacks:
 
@@ -227,7 +220,6 @@ Inherits `Rectangle`. A number with up and down buttons. The arrow keys step it,
 | `minimum` | int | in | `0` |  |
 | `maximum` | int | in | `100` |  |
 | `step` | int | in | `1` |  |
-| `enabled` | bool | in | `true` |  |
 | `value` | int | in-out |  |  |
 | `has-focus` | bool | out |  |  |
 
@@ -252,7 +244,6 @@ Inherits `Rectangle`. A drop-down choice among `model`. Click (or Space, Return)
 | `model` | [string] | in |  |  |
 | `current-index` | int | in-out |  |  |
 | `current-value` | string | out |  |  |
-| `enabled` | bool | in | `true` |  |
 | `has-focus` | bool | out |  |  |
 
 Callbacks:
@@ -407,7 +398,6 @@ Inherits `Empty`. A wheel of choices, like the ones of a time picker. Drag or fl
 | `current-index` | int | in-out |  |  |
 | `current-value` | string | out |  |  |
 | `visible-count` | int | in | `5` | Items in view (best odd: the current one in the middle). |
-| `enabled` | bool | in | `true` |  |
 | `has-focus` | bool | out |  |  |
 
 Callbacks:
@@ -439,7 +429,7 @@ Callbacks:
 Functions:
 
 - `open-at(x: length, y: length)`: Opens it at `x`, `y` in its parent (where a right click was, say).
-- `open()`: Opens it where it is.
+- `open()`: Opens it where it is (not while disabled).
 
 ## MenuBar
 
@@ -500,7 +490,6 @@ Inherits `Empty`. A radio button: one choice of several. A click (or Space, with
 | Property | Type | Access | Default | Description |
 |---|---|---|---|---|
 | `text` | string | in |  |  |
-| `enabled` | bool | in | `true` |  |
 | `checked` | bool | in-out |  |  |
 | `has-focus` | bool | out |  |  |
 | `has-hover` | bool | out |  |  |
@@ -552,7 +541,6 @@ Inherits `Empty`. A titled frame (`text`) around controls that belong together.
 | Property | Type | Access | Default | Description |
 |---|---|---|---|---|
 | `text` | string | in |  |  |
-| `enabled` | bool | in | `true` |  |
 | `spacing` | length | in | `8px` |  |
 
 ## ToolBar
@@ -567,7 +555,6 @@ Inherits `Rectangle`. A flat button for a tool bar: an `icon` and/or `text`. `ch
 |---|---|---|---|---|
 | `text` | string | in |  |  |
 | `icon` | image | in |  |  |
-| `enabled` | bool | in | `true` |  |
 | `checkable` | bool | in |  |  |
 | `checked` | bool | in-out |  |  |
 | `pressed` | bool | out |  |  |
@@ -602,7 +589,6 @@ Inherits `Empty`. A slider with two thumbs: a range from `first-value` to `secon
 | `minimum` | float | in | `0` |  |
 | `maximum` | float | in | `100` |  |
 | `step` | float | in | `0` | Values snap to multiples of `step` from `minimum` (0: no snapping). |
-| `enabled` | bool | in | `true` |  |
 | `first-value` | float | in-out | `25` |  |
 | `second-value` | float | in-out | `75` |  |
 
@@ -619,7 +605,6 @@ Inherits `Empty`. A round knob: its value from `minimum` to `maximum`, turned by
 | `minimum` | float | in | `0` |  |
 | `maximum` | float | in | `100` |  |
 | `step` | float | in | `0` | Values snap to multiples of `step` from `minimum` (0: no snapping). |
-| `enabled` | bool | in | `true` |  |
 | `value` | float | in-out |  |  |
 | `has-focus` | bool | out |  |  |
 

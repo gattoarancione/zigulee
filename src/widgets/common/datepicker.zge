@@ -92,7 +92,7 @@ export component DatePicker inherits Rectangle {
         font-weight: 700;
         horizontal-alignment: center;
         vertical-alignment: center;
-        color: Palette.foreground;
+        color: root.enabled ? Palette.foreground : Palette.disabled-foreground;
     }
     for arrow[k] in 2 : Rectangle {
         x: k == 0 ? 8px : root.width - 36px;
@@ -107,7 +107,7 @@ export component DatePicker inherits Rectangle {
             width: 6px;
             height: 10px;
             commands: k == 0 ? "M 6 0 L 0 5 L 6 10" : "M 0 0 L 6 5 L 0 10";
-            stroke: Palette.secondary-foreground;
+            stroke: root.enabled ? Palette.secondary-foreground : Palette.disabled-foreground;
             stroke-width: 1.5px;
         }
         arrow-touch := TouchArea {
@@ -124,7 +124,7 @@ export component DatePicker inherits Rectangle {
         font-size: 12px;
         horizontal-alignment: center;
         vertical-alignment: center;
-        color: Palette.secondary-foreground;
+        color: root.enabled ? Palette.secondary-foreground : Palette.disabled-foreground;
     }
     // Days: six weeks of seven.
     for i in 42 : Rectangle {
@@ -134,14 +134,15 @@ export component DatePicker inherits Rectangle {
         height: root.cell - 4px;
         border-radius: self.width / 2;
         visible: i >= root.offset && i - root.offset < root.days;
-        background: root.shown-year == root.year && root.shown-month == root.month && i - root.offset + 1 == root.day ? Palette.accent-background
+        background: root.shown-year == root.year && root.shown-month == root.month && i - root.offset + 1 == root.day ? (root.enabled ? Palette.accent-background : Palette.control-disabled)
             : day-touch.pressed ? Palette.control-pressed : day-touch.has-hover ? Palette.control-hover : #00000000;
         Text {
             text: "\{i - root.offset + 1}";
             font-size: 13px;
             horizontal-alignment: center;
             vertical-alignment: center;
-            color: root.shown-year == root.year && root.shown-month == root.month && i - root.offset + 1 == root.day ? Palette.accent-foreground : Palette.foreground;
+            color: !root.enabled ? Palette.disabled-foreground
+                : root.shown-year == root.year && root.shown-month == root.month && i - root.offset + 1 == root.day ? Palette.accent-foreground : Palette.foreground;
         }
         day-touch := TouchArea {
             clicked => { root.pick(i - root.offset + 1); }

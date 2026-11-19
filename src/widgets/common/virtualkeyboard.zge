@@ -27,7 +27,7 @@ component VirtualKey inherits Rectangle {
     horizontal-stretch: 1;
     border-radius: Style.button-radius + 2px;
     background: touch.pressed ? (root.highlighted ? Palette.accent-pressed : Palette.control-pressed)
-        : root.highlighted ? Palette.accent-background
+        : root.highlighted ? (root.enabled ? Palette.accent-background : Palette.control-disabled)
         : root.special ? Palette.control-disabled : Palette.control-background;
     border-width: Style.button-border-width;
     border-color: Palette.border;
@@ -39,7 +39,7 @@ component VirtualKey inherits Rectangle {
         font-size: root.font-size;
         horizontal-alignment: center;
         vertical-alignment: center;
-        color: root.highlighted ? Palette.accent-foreground : Palette.foreground;
+        color: !root.enabled ? Palette.disabled-foreground : root.highlighted ? Palette.accent-foreground : Palette.foreground;
     }
     touch := TouchArea {
         changed pressed => {

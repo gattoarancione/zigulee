@@ -7,7 +7,6 @@ import { Style } from "style.zge";
 // A check box with a label. Space toggles it when it has keyboard focus.
 export component CheckBox inherits Empty {
     var in <string> text;
-    var in <bool> enabled: true;
     var in-out <bool> checked;
     var out <bool> has-focus: fs.has-focus;
     var out <bool> has-hover: touch.has-hover;
@@ -100,7 +99,6 @@ export component CheckBox inherits Empty {
 // An on/off toggle switch with a label.
 export component Switch inherits Empty {
     var in <string> text;
-    var in <bool> enabled: true;
     var in-out <bool> checked;
     var out <bool> has-focus: fs.has-focus;
     var out <bool> has-hover: touch.has-hover;

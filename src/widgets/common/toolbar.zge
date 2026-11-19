@@ -28,7 +28,6 @@ export component ToolBar inherits Rectangle {
 export component ToolButton inherits Rectangle {
     var in <string> text;
     var in <image> icon;
-    var in <bool> enabled: true;
     var in <bool> checkable;
     var in-out <bool> checked;
     var out <bool> pressed: touch.pressed;

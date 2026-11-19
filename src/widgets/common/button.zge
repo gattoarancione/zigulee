@@ -8,7 +8,6 @@ import { Style } from "style.zge";
 // it when it has keyboard focus.
 export component Button inherits Rectangle {
     var in <string> text;
-    var in <bool> enabled: true;
     var in <bool> primary;
     var out <bool> pressed: touch.pressed;
     var out <bool> has-hover: touch.has-hover;

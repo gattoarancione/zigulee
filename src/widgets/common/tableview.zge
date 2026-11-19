@@ -129,7 +129,7 @@ export component StandardTableView inherits Rectangle {
             font-size: 13px;
             font-weight: 700;
             vertical-alignment: center;
-            color: Palette.secondary-foreground;
+            color: root.enabled ? Palette.secondary-foreground : Palette.disabled-foreground;
         }
         Path {
             visible: c == root.sort-column;
@@ -138,7 +138,7 @@ export component StandardTableView inherits Rectangle {
             width: 9px;
             height: 5px;
             commands: root.sort-ascending ? "M 0 5 L 4.5 0 L 9 5" : "M 0 0 L 4.5 5 L 9 0";
-            stroke: Palette.secondary-foreground;
+            stroke: root.enabled ? Palette.secondary-foreground : Palette.disabled-foreground;
             stroke-width: 1.2px;
         }
         Rectangle {
@@ -178,7 +178,7 @@ export component StandardTableView inherits Rectangle {
                     root.set-current-row(r);
                 }
                 accessible-action-set-selected(on) => { root.set-selected(r, on); }
-                background: sel.selected[r] ? Palette.selection-background
+                background: sel.selected[r] ? (root.enabled ? Palette.selection-background : Palette.control-disabled)
                     : row-touch.has-hover ? Palette.control-hover : #00000000;
                 for cell[c] in row : Text {
                     accessible-role: table-cell;
@@ -188,7 +188,7 @@ export component StandardTableView inherits Rectangle {
                     overflow: elide;
                     font-size: Style.font-size;
                     vertical-alignment: center;
-                    color: Palette.foreground;
+                    color: root.enabled ? Palette.foreground : Palette.disabled-foreground;
                 }
                 row-touch := TouchArea {
                     clicked => {
@@ -282,7 +282,7 @@ export component TableView inherits Rectangle {
             font-size: 13px;
             font-weight: 700;
             vertical-alignment: center;
-            color: Palette.secondary-foreground;
+            color: root.enabled ? Palette.secondary-foreground : Palette.disabled-foreground;
         }
         Path {
             visible: c == root.sort-column;
@@ -291,7 +291,7 @@ export component TableView inherits Rectangle {
             width: 9px;
             height: 5px;
             commands: root.sort-ascending ? "M 0 5 L 4.5 0 L 9 5" : "M 0 0 L 4.5 5 L 9 0";
-            stroke: Palette.secondary-foreground;
+            stroke: root.enabled ? Palette.secondary-foreground : Palette.disabled-foreground;
             stroke-width: 1.2px;
         }
         Rectangle {

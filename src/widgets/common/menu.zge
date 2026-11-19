@@ -38,12 +38,14 @@ export component Menu inherits PopupWindow {
         root.y = y;
         root.open();
     }
-    // Opens it where it is.
+    // Opens it where it is (not while disabled).
     public function open() {
-        root.highlighted = -1;
-        root.open-item = -1;
-        root.show();
-        fs.focus();
+        if root.enabled {
+            root.highlighted = -1;
+            root.open-item = -1;
+            root.show();
+            fs.focus();
+        }
     }
 
     var <int> highlighted: -1;
@@ -191,7 +193,7 @@ export component Menu inherits PopupWindow {
                     width: 12px;
                     height: 9px;
                     commands: "M 0 4.5 L 4.5 9 L 12 0";
-                    stroke: entry.disabled ? Palette.disabled-foreground : Palette.foreground;
+                    stroke: entry.disabled || !root.enabled ? Palette.disabled-foreground : Palette.foreground;
                     stroke-width: 1.5px;
                 }
                 Text {
@@ -203,7 +205,7 @@ export component Menu inherits PopupWindow {
                     overflow: elide;
                     font-size: Style.font-size;
                     vertical-alignment: center;
-                    color: entry.disabled ? Palette.disabled-foreground : Palette.foreground;
+                    color: entry.disabled || !root.enabled ? Palette.disabled-foreground : Palette.foreground;
                 }
                 shortcut := Text {
                     visible: !entry.separator && !root.has-submenu(i);
@@ -222,7 +224,7 @@ export component Menu inherits PopupWindow {
                     width: 6px;
                     height: 10px;
                     commands: "M 0 0 L 6 5 L 0 10";
-                    stroke: entry.disabled ? Palette.disabled-foreground : Palette.secondary-foreground;
+                    stroke: entry.disabled || !root.enabled ? Palette.disabled-foreground : Palette.secondary-foreground;
                     stroke-width: 1.5px;
                 }
                 item-touch := TouchArea {
@@ -327,7 +329,7 @@ export component MenuBarItem inherits Rectangle {
         text: root.text;
         font-size: Style.font-size;
         vertical-alignment: center;
-        color: Palette.foreground;
+        color: root.enabled ? Palette.foreground : Palette.disabled-foreground;
     }
     touch := TouchArea {
         clicked => { menu.open-at(0px, root.height); }
@@ -350,7 +352,7 @@ export component MenuBarItem inherits Rectangle {
             text: entry.text;
             shortcut: entry.shortcut;
             checked: entry.checked;
-            enabled: !entry.disabled;
+            enabled: !entry.disabled && root.enabled;
             separator: entry.separator;
             level: entry.level;
             activated => { root.activated(i); }

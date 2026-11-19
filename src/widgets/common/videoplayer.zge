@@ -75,7 +75,8 @@ export component VideoPlayer inherits Rectangle {
         width: parent.width;
         height: 40px;
         background: #000000a0;
-        opacity: root.shown ? 1 : 0;
+        // Disabled: shown dimmed (nothing in it takes a click).
+        opacity: !root.shown ? 0 : root.enabled ? 1 : 0.5;
         animate opacity { duration: 200ms; }
 
         button := TouchArea {
@@ -125,7 +126,7 @@ export component VideoPlayer inherits Rectangle {
             width: seek.width * root.ratio;
             height: 4px;
             border-radius: 2px;
-            background: Palette.accent-background;
+            background: root.enabled ? Palette.accent-background : #ffffffaa;
         }
         Rectangle {
             x: seek.x + seek.width * root.ratio - self.width / 2;

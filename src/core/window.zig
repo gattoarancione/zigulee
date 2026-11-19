@@ -697,7 +697,8 @@ pub const Window = struct {
     /// `event` is in the coordinates of `item`'s parent. `path` holds the
     /// intercepting ancestors of `item`.
     fn dispatchTo(self: *Window, item: *Item, event: input.PointerEvent, hover: *HoverSet, path: *Interceptors) bool {
-        if (!item.visible.get()) return false;
+        // Disabled: neither it nor its children; what is below gets it.
+        if (!item.visible.get() or !item.enabled.get()) return false;
         const g = item.geometry();
         // Tilted in depth: where the point is on its flat drawing.
         const flat = if (event.position()) |p| event.at(untilted(item, p) orelse return false) else event;

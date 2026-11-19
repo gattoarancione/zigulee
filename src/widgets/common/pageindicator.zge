@@ -33,7 +33,7 @@ export component PageIndicator inherits Empty {
             width: root.dot-size;
             height: root.dot-size;
             border-radius: root.dot-size / 2;
-            background: i == root.current-index ? Palette.accent-background
+            background: i == root.current-index ? (root.enabled ? Palette.accent-background : Palette.disabled-foreground)
                 : touch.has-hover && root.interactive ? Palette.secondary-foreground : Palette.strong-border;
             animate background { duration: 120ms; }
             accessible-role: tab;

@@ -9,7 +9,6 @@ import { Style } from "style.zge";
 export component TextEdit inherits Rectangle {
     var in-out <string> text <=> input.text;
     var in <length> font-size: Style.font-size;
-    var in <bool> enabled: true;
     var in <bool> read-only;
     var in <TextWrap> wrap: word-wrap;
     // Where each line sits across the field.

@@ -28,7 +28,6 @@ pub const threshold: f32 = 4;
 
 pub const DragArea = struct {
     item: Item = .init(&vtable),
-    enabled: Property(bool) = .init(true),
     /// What is dragged: DropAreas accept it by kind.
     kind: Property([]const u8) = .init(""),
     data: Property([]const u8) = .init(""),
@@ -57,7 +56,6 @@ pub const DragArea = struct {
             if (self.target) |t| t.leave();
         }
         self.item.deinit();
-        self.enabled.deinit();
         self.kind.deinit();
         self.data.deinit();
         self.dragging.deinit();
@@ -73,13 +71,13 @@ pub const DragArea = struct {
 
     fn mouseCursor(i: *Item) input.MouseCursor {
         const self = of(i);
-        if (!self.enabled.get()) return .default;
+        if (!self.item.isEnabled()) return .default;
         return if (self.dragging.get()) .move else .default;
     }
 
     fn inputEvent(i: *Item, event: input.PointerEvent, w: *Window) input.InputEventResult {
         const self = of(i);
-        if (!self.enabled.get()) return .ignored;
+        if (!self.item.isEnabled()) return .ignored;
         switch (event) {
             .pressed => |p| {
                 if (p.button != .left) return .ignored;
@@ -175,7 +173,6 @@ pub const DragArea = struct {
 
 pub const DropArea = struct {
     item: Item = .init(&vtable),
-    enabled: Property(bool) = .init(true),
     /// The kind it takes ("": any).
     accepts: Property([]const u8) = .init(""),
     /// A drag it takes is over it.
@@ -193,7 +190,6 @@ pub const DropArea = struct {
 
     pub fn deinit(self: *DropArea) void {
         self.item.deinit();
-        self.enabled.deinit();
         self.accepts.deinit();
         self.contains_drag.deinit();
         self.drag_kind.deinit();
@@ -205,7 +201,7 @@ pub const DropArea = struct {
     const vtable: ItemVTable = .{ .name = "DropArea" };
 
     fn takes(self: *DropArea, kind: []const u8) bool {
-        if (!self.enabled.get()) return false;
+        if (!self.item.isEnabled()) return false;
         const accepts = self.accepts.get();
         return accepts.len == 0 or std.mem.eql(u8, accepts, kind);
     }
@@ -235,7 +231,7 @@ pub const DropArea = struct {
 
 /// The topmost visible DropArea at `p` (window coordinates) taking `kind`.
 pub fn dropAreaAt(item: *Item, p: Point, kind: []const u8) ?*DropArea {
-    if (!item.visible.get()) return null;
+    if (!item.visible.get() or !item.enabled.get()) return null;
     // Later children are on top: the last match among them wins.
     var found: ?*DropArea = null;
     var it = item.first_child;

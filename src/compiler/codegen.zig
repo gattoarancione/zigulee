@@ -1348,7 +1348,15 @@ pub const Generator = struct {
                 // An element's own property of the same name (a sensor's
                 // `x`) hides its position's.
                 if (b.prop(name) == null) for (types.geometry_props) |p| if (std.mem.eql(u8, p.name, name))
-                    return .{ .property = .{ .path = try g.print("{s}.{s}.{s}", .{ base, b.item, p.zig }), .ty = p.ty, .anim = anim, .sym = .{ .common = p.name } } };
+                    return .{ .property = .{
+                        .path = try g.print("{s}.{s}.{s}", .{ base, b.item, p.zig }),
+                        .ty = p.ty,
+                        .anim = anim,
+                        .sym = .{ .common = p.name },
+                        // Read as its parents leave it (disabled with them);
+                        // set as its own.
+                        .read = if (std.mem.eql(u8, p.name, "enabled")) try g.print("self.{s}.{s}.isEnabled()", .{ base, b.item }) else null,
+                    } };
                 for (types.constraint_props) |p| if (std.mem.eql(u8, p.name, name)) {
                     const orientation = if (std.mem.endsWith(u8, p.zig, "width") or std.mem.startsWith(u8, p.zig, "horizontal")) "horizontal" else "vertical";
                     const field = if (std.mem.startsWith(u8, p.zig, "min")) "min" else if (std.mem.startsWith(u8, p.zig, "max")) "max" else if (std.mem.startsWith(u8, p.zig, "preferred")) "preferred" else "stretch";

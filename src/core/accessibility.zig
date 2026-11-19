@@ -77,6 +77,7 @@ fn visit(window: *Window, gpa: Allocator, out: *std.ArrayList(Node), item: *Item
             .bounds = .{ .x = pos.x, .y = pos.y, .width = item.width.get(), .height = item.height.get() },
             .value = item.accessibleValue(),
             .focused = if (window.focus_item) |f| item.contains(f) else false,
+            .enabled = item.isEnabled(),
         };
         if (item.accessible) |a| {
             node.description = a.description.get();
@@ -86,7 +87,7 @@ fn visit(window: *Window, gpa: Allocator, out: *std.ArrayList(Node), item: *Item
             node.placeholder_text = a.placeholder_text.get();
             node.checkable = a.checkable.get();
             node.checked = a.checked.get();
-            node.enabled = a.enabled.get();
+            node.enabled = node.enabled and a.enabled.get();
             node.multiselectable = a.multiselectable.get();
         }
         try out.append(gpa, node);

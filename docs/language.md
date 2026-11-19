@@ -343,9 +343,9 @@ Comments are `// ...` and `/* ... */`. Names may contain dashes
 
 ## Properties and bindings
 
-Elements have properties: `x`, `y`, `width`, `height`, `visible` and
-`opacity` everywhere, and others depending on the element. Components
-declare their own:
+Elements have properties: `x`, `y`, `width`, `height`, `visible`,
+`enabled` and `opacity` everywhere, and others depending on the element.
+Components declare their own:
 
 ```slint
 component Counter inherits Rectangle {
@@ -555,6 +555,27 @@ export component Mirror inherits Window {
     input := TextInput { }
 }
 ```
+
+### Enabled
+
+`enabled: false` turns an element off with everything inside it, as in
+QML: they take no clicks, touches or keys (what is under them gets the
+clicks), cannot take focus, and are read out as disabled. Reading an
+element's `enabled` gives whether it is on there: false inside a disabled
+layout, pane or group box even if it never set its own. Setting it sets
+its own, so `enabled: true` cannot turn back on what a parent turned off.
+The standard widgets grey themselves while disabled.
+
+```slint
+HorizontalLayout {
+    enabled: root.signed-in;
+    Button { text: "Send"; }      // off while not signed in
+    Button { text: "Delete"; enabled: root.selected >= 0; }
+}
+```
+
+A component that declares its own `enabled` hides the element's: setting
+it does not turn off what is inside. Leave it out and read `root.enabled`.
 
 ## Types and values
 

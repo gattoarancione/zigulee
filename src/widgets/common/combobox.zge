@@ -10,7 +10,6 @@ export component ComboBox inherits Rectangle {
     var in <[string]> model;
     var in-out <int> current-index;
     var out <string> current-value: current-index >= 0 && current-index < model.length ? model[current-index] : "";
-    var in <bool> enabled: true;
     var out <bool> has-focus: fs.has-focus;
     // Called when the user picks an entry.
     callback selected(string);

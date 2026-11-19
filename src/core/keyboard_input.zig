@@ -39,7 +39,7 @@ pub const KeyboardInput = struct {
     /// The input typed into, if it can be.
     fn target() ?*TextInput {
         const t = text_input.focused_input.get() orelse return null;
-        if (!t.enabled.get() or t.read_only.get()) return null;
+        if (!t.item.isEnabled() or t.read_only.get()) return null;
         return t;
     }
 

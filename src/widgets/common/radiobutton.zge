@@ -12,7 +12,6 @@ import { Style } from "style.zge";
 // set.
 export component RadioButton inherits Empty {
     var in <string> text;
-    var in <bool> enabled: true;
     var in-out <bool> checked;
     var out <bool> has-focus: fs.has-focus;
     var out <bool> has-hover: touch.has-hover;

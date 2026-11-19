@@ -12,7 +12,6 @@ export component Slider inherits Empty {
     var in <float> maximum: 100;
     // Values snap to multiples of `step` from `minimum` (0: no snapping).
     var in <float> step: 0;
-    var in <bool> enabled: true;
     var in-out <float> value;
     var out <bool> has-focus: fs.has-focus;
     // Called when the user changes the value.

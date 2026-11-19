@@ -192,7 +192,9 @@ fn widgets(arena: Allocator) ![]const u8 {
         \\in three styles, chosen at build time: `fluent` (the default),
         \\`material` and `minimal`. The style changes their look (the `Palette`
         \\colors and `Style` sizes), not their properties. Besides the
-        \\properties listed here, each has those of the element it inherits.
+        \\properties listed here, each has those of the element it inherits,
+        \\and those of every element: `visible` and `enabled` among them
+        \\(disabled, a widget greys itself and takes no input).
         \\
     );
     const index_path = std_widgets.root;

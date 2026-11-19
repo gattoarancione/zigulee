@@ -10,7 +10,6 @@ export component LineEdit inherits Rectangle {
     // Shown while the text is empty.
     var in <string> placeholder-text;
     var in <length> font-size: Style.font-size;
-    var in <bool> enabled: true;
     var in <bool> read-only;
     // `password` shows bullets.
     var in <InputType> input-type;

@@ -503,6 +503,7 @@ pub const geometry_props = [_]Prop{
     .{ .name = "width", .ty = .length, .zig = "width" },
     .{ .name = "height", .ty = .length, .zig = "height" },
     .{ .name = "visible", .ty = .bool, .zig = "visible" },
+    .{ .name = "enabled", .ty = .bool, .zig = "enabled" },
     .{ .name = "opacity", .ty = .float, .zig = "opacity" },
 };
 
@@ -833,7 +834,6 @@ pub const builtins = [_]Builtin{
         .in_tree = false,
         .props = &.{
             .{ .name = "sequence", .ty = .string, .zig = "sequence" },
-            .{ .name = "enabled", .ty = .bool, .zig = "enabled" },
         },
         .callbacks = &.{.{ .name = "activated", .zig = "activated" }},
     },
@@ -842,7 +842,6 @@ pub const builtins = [_]Builtin{
         .doc = "Scaled and turned by two fingers (or a trackpad's pinch and rotation): while `active`, `pinch-scale` (1 at the start) and `pinch-rotation` (degrees, clockwise) follow the gesture, about `center-x`, `center-y`; `started`, `updated` and `finished` mark it. One finger still works as the mouse in it. Draws nothing.",
         .zig_type = "zigulee.items.PinchArea",
         .props = &.{
-            .{ .name = "enabled", .ty = .bool, .zig = "enabled" },
             .{ .name = "active", .ty = .bool, .zig = "active", .read_only = true },
             .{ .name = "pinch-scale", .ty = .float, .zig = "scale", .read_only = true },
             .{ .name = "pinch-rotation", .ty = .float, .zig = "rotation", .read_only = true },
@@ -860,7 +859,6 @@ pub const builtins = [_]Builtin{
         .doc = "Reports a quick drag over it (the mouse or a finger): `swiped(direction)` once it went `distance` (40 px) mostly one way (`SwipeDirection.left`, `right`, `up`, `down`). While dragging, `swiping` and `offset-x`, `offset-y` follow it. A press that does not move goes to what is in it. Draws nothing.",
         .zig_type = "zigulee.items.SwipeArea",
         .props = &.{
-            .{ .name = "enabled", .ty = .bool, .zig = "enabled" },
             .{ .name = "distance", .ty = .length, .zig = "distance" },
             .{ .name = "swiping", .ty = .bool, .zig = "swiping", .read_only = true },
             .{ .name = "offset-x", .ty = .length, .zig = "offset_x", .read_only = true },
@@ -875,7 +873,6 @@ pub const builtins = [_]Builtin{
         .doc = "Dragged by the pointer: a press moved past a few pixels starts dragging its `kind` and `data` (strings) to a DropArea that `accepts` the kind. It draws nothing: bind what shows the drag to `dragging` and `offset-x`, `offset-y` (the pointer since the press). `started` at the start, `finished(dropped)` at the end (`true` if dropped on a DropArea); `clicked` for a press released without dragging. Escape cancels.",
         .zig_type = "zigulee.items.DragArea",
         .props = &.{
-            .{ .name = "enabled", .ty = .bool, .zig = "enabled" },
             .{ .name = "kind", .ty = .string, .zig = "kind" },
             .{ .name = "data", .ty = .string, .zig = "data" },
             .{ .name = "dragging", .ty = .bool, .zig = "dragging", .read_only = true },
@@ -893,7 +890,6 @@ pub const builtins = [_]Builtin{
         .doc = "Takes what a DragArea drops on it, of the kind it `accepts` (\"\": any): `contains-drag` while one is over it (its `drag-kind`, `drag-data`, and the pointer at `drag-x`, `drag-y`), `entered` and `exited`, then `dropped(data)`. The topmost one under the pointer takes it.",
         .zig_type = "zigulee.items.DropArea",
         .props = &.{
-            .{ .name = "enabled", .ty = .bool, .zig = "enabled" },
             .{ .name = "accepts", .ty = .string, .zig = "accepts" },
             .{ .name = "contains-drag", .ty = .bool, .zig = "contains_drag", .read_only = true },
             .{ .name = "drag-kind", .ty = .string, .zig = "drag_kind", .read_only = true },
@@ -912,7 +908,6 @@ pub const builtins = [_]Builtin{
         .doc = "Reports pointer input in its area: `clicked` after a press and release inside it, `moved` while the pointer moves over it or is pressed, `right-clicked` after the right button (to open a context menu). A second click within `double-click-interval` (400 ms) of the first, close to it, calls `double-clicked` instead of `clicked` when that has a handler (as Qt's MouseArea). `pointer-event(event)` tells every press and release of any button (`event.kind`: `PointerEventKind.down`, `up`), move over it or while pressed (`move`), and a press taken away by another element dragging (`cancel`), with `event.button` (`PointerEventButton.left`, `right`, `middle`, `other`) and `event.modifiers`. `modifiers` are the keys held at the press (`modifiers.shift` for a Shift-click).",
         .zig_type = "zigulee.items.TouchArea",
         .props = &.{
-            .{ .name = "enabled", .ty = .bool, .zig = "enabled" },
             .{ .name = "mouse-cursor", .ty = .{ .enumeration = &mouse_cursor }, .zig = "mouse_cursor" },
             .{ .name = "pressed", .ty = .bool, .zig = "pressed", .read_only = true },
             .{ .name = "has-hover", .ty = .bool, .zig = "has_hover", .read_only = true },
@@ -936,7 +931,6 @@ pub const builtins = [_]Builtin{
         .doc = "Receives key events when it has the keyboard focus. Handlers return `accept` or `reject`; rejected keys go to the parent scopes.",
         .zig_type = "zigulee.items.FocusScope",
         .props = &.{
-            .{ .name = "enabled", .ty = .bool, .zig = "enabled" },
             .{ .name = "has-focus", .ty = .bool, .zig = "has_focus", .read_only = true },
         },
         .callbacks = &.{
@@ -988,7 +982,6 @@ pub const builtins = [_]Builtin{
             .{ .name = "letter-spacing", .ty = .length, .zig = "letter_spacing" },
             .{ .name = "font-family", .ty = .string, .zig = "font_family" },
             .{ .name = "font-weight", .ty = .int, .zig = "font_weight" },
-            .{ .name = "enabled", .ty = .bool, .zig = "enabled" },
             .{ .name = "has-focus", .ty = .bool, .zig = "has_focus", .read_only = true },
             .{ .name = "read-only", .ty = .bool, .zig = "read_only" },
             .{ .name = "input-type", .ty = .{ .enumeration = &input_type }, .zig = "input_type" },

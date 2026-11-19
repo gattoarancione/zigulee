@@ -29,7 +29,6 @@ var registry_gpa: ?Allocator = null;
 pub const Shortcut = struct {
     item: Item = .init(&vtable),
     sequence: Property([]const u8) = .init(""),
-    enabled: Property(bool) = .init(true),
     activated: Callback(fn () void) = .{},
 
     /// Initialize in place.
@@ -50,7 +49,6 @@ pub const Shortcut = struct {
         };
         self.item.deinit();
         self.sequence.deinit();
-        self.enabled.deinit();
     }
 
     const vtable: item_mod.ItemVTable = .{ .name = "Shortcut" };
@@ -63,7 +61,7 @@ pub fn handle(event: input.KeyEvent) bool {
     while (i > 0) {
         i -= 1;
         const s = registered.items[i];
-        if (!s.enabled.getUntracked()) continue;
+        if (!s.item.isEnabledUntracked()) continue;
         if (!matches(s.sequence.getUntracked(), event)) continue;
         s.activated.call(.{});
         return true;
@@ -203,7 +201,7 @@ test "shortcuts run when the focused element does not take the key" {
     try testing.expectEqual(@as(usize, 2), saves);
     try testing.expectEqual(@as(usize, 1), copies);
     // Disabled: not run.
-    save.enabled.set(false);
+    save.item.enabled.set(false);
     w.dispatchKey(.pressed, press("s", primary));
     try testing.expectEqual(@as(usize, 2), saves);
 }

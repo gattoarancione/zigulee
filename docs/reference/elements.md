@@ -14,6 +14,7 @@ All elements have these properties:
 | `width` | length | in-out |
 | `height` | length | in-out |
 | `visible` | bool | in-out |
+| `enabled` | bool | in-out |
 | `opacity` | float | in-out |
 
 In a layout, elements also take constraints, which the layout uses to
@@ -276,7 +277,6 @@ Takes no child elements.
 | Property | Type | Access |
 |---|---|---|
 | `sequence` | string | in-out |
-| `enabled` | bool | in-out |
 
 Callbacks:
 
@@ -288,7 +288,6 @@ Scaled and turned by two fingers (or a trackpad's pinch and rotation): while `ac
 
 | Property | Type | Access |
 |---|---|---|
-| `enabled` | bool | in-out |
 | `active` | bool | out (read-only) |
 | `pinch-scale` | float | out (read-only) |
 | `pinch-rotation` | float | out (read-only) |
@@ -307,7 +306,6 @@ Reports a quick drag over it (the mouse or a finger): `swiped(direction)` once i
 
 | Property | Type | Access |
 |---|---|---|
-| `enabled` | bool | in-out |
 | `distance` | length | in-out |
 | `swiping` | bool | out (read-only) |
 | `offset-x` | length | out (read-only) |
@@ -323,7 +321,6 @@ Dragged by the pointer: a press moved past a few pixels starts dragging its `kin
 
 | Property | Type | Access |
 |---|---|---|
-| `enabled` | bool | in-out |
 | `kind` | string | in-out |
 | `data` | string | in-out |
 | `dragging` | bool | out (read-only) |
@@ -342,7 +339,6 @@ Takes what a DragArea drops on it, of the kind it `accepts` ("": any): `contains
 
 | Property | Type | Access |
 |---|---|---|
-| `enabled` | bool | in-out |
 | `accepts` | string | in-out |
 | `contains-drag` | bool | out (read-only) |
 | `drag-kind` | string | out (read-only) |
@@ -362,7 +358,6 @@ Reports pointer input in its area: `clicked` after a press and release inside it
 
 | Property | Type | Access |
 |---|---|---|
-| `enabled` | bool | in-out |
 | `mouse-cursor` | MouseCursor | in-out |
 | `pressed` | bool | out (read-only) |
 | `has-hover` | bool | out (read-only) |
@@ -387,7 +382,6 @@ Receives key events when it has the keyboard focus. Handlers return `accept` or 
 
 | Property | Type | Access |
 |---|---|---|
-| `enabled` | bool | in-out |
 | `has-focus` | bool | out (read-only) |
 
 Callbacks:
@@ -442,7 +436,6 @@ Takes no child elements.
 | `letter-spacing` | length | in-out |
 | `font-family` | string | in-out |
 | `font-weight` | int | in-out |
-| `enabled` | bool | in-out |
 | `has-focus` | bool | out (read-only) |
 | `read-only` | bool | in-out |
 | `input-type` | InputType | in-out |

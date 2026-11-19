@@ -280,7 +280,7 @@ const Form = struct {
         // first, second (containing inner), disabled
         f.window.rootItem().appendChildren(&.{ &f.first.item, &f.second.item, &f.disabled.item });
         f.second.item.appendChild(&f.inner.item);
-        f.disabled.enabled.set(false);
+        f.disabled.item.enabled.set(false);
         f.first.item.setGeometry(.{ .width = 50, .height = 50 });
         // `inner` handles letters; `second` handles Escape bubbling up from it.
         f.inner.key_pressed.setHandler(f, struct {
@@ -1195,7 +1195,7 @@ test "the mouse cursor: the innermost item that sets one, the grabber while drag
     try testing.expectEqual(Cursor.pointer, window.mouseCursor());
 
     // Disabled: the default; outside the window: the default.
-    link.enabled.set(false);
+    link.item.enabled.set(false);
     try testing.expectEqual(Cursor.default, window.mouseCursor());
     window.dispatchPointer(.exit);
     try testing.expectEqual(Cursor.default, window.mouseCursor());

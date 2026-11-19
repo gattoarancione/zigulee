@@ -34,7 +34,6 @@ export component Frame inherits Rectangle {
 // A titled frame (`text`) around controls that belong together.
 export component GroupBox inherits Empty {
     var in <string> text;
-    var in <bool> enabled: true;
     var in <length> spacing: 8px;
 
     accessible-role: group;

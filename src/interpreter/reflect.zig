@@ -495,6 +495,30 @@ fn fieldPtr(comptime T: type, ptr: *T, comptime path: []const u8) *FieldType(T, 
     return &@field(ptr, path);
 }
 
+/// An item's `enabled`: set as its own, read as its parents leave it
+/// (`Item.isEnabled`).
+fn enabledRef(item: *core.Item) PropRef {
+    const S = struct {
+        fn owner(p: *anyopaque) *core.Item {
+            const prop: *Property(bool) = @ptrCast(@alignCast(p));
+            return @fieldParentPtr("enabled", prop);
+        }
+        fn get(p: *anyopaque, _: Type) Value {
+            return .{ .bool = owner(p).isEnabled() };
+        }
+        fn getUntracked(p: *anyopaque, _: Type) Value {
+            return .{ .bool = owner(p).isEnabledUntracked() };
+        }
+        const vtable: PropRef.VTable = blk: {
+            var v = vtableFor(bool).*;
+            v.get = get;
+            v.getUntracked = getUntracked;
+            break :blk v;
+        };
+    };
+    return .{ .ptr = &item.enabled, .vt = &S.vtable, .ty = .bool };
+}
+
 fn propRefAt(comptime T: type, ptr: *T, comptime path: []const u8, ty: Type) PropRef {
     const P = FieldType(T, path);
     const V = @FieldType(P, "value");
@@ -562,9 +586,13 @@ fn metaFor(comptime b: *const types.Builtin) BuiltinMeta {
             return fieldPtr(T, cast(p), b.content orelse b.item);
         }
         fn props(p: *anyopaque, name: []const u8) ?Props {
+            @setEvalBranchQuota(10_000);
             var out: Props = .{};
             inline for (types.geometry_props) |g| if (comptime b.prop(g.name) == null) if (std.mem.eql(u8, g.name, name)) {
-                out.refs[0] = propRefAt(T, cast(p), b.item ++ "." ++ g.zig, g.ty);
+                out.refs[0] = if (comptime std.mem.eql(u8, g.name, "enabled"))
+                    enabledRef(fieldPtr(T, cast(p), b.item))
+                else
+                    propRefAt(T, cast(p), b.item ++ "." ++ g.zig, g.ty);
                 out.len = 1;
                 return out;
             };

@@ -164,7 +164,6 @@ fn angle(a: Point, b: Point) f32 {
 /// and `finished` mark the gesture. Draws nothing.
 pub const PinchArea = struct {
     item: Item = .init(&vtable),
-    enabled: Property(bool) = .init(true),
     active: Property(bool) = .init(false),
     scale: Property(f32) = .init(1),
     rotation: Property(f32) = .init(0),
@@ -180,7 +179,6 @@ pub const PinchArea = struct {
             if (w.touch.trackpad == self) w.touch.trackpad = null;
         }
         self.item.deinit();
-        self.enabled.deinit();
         self.active.deinit();
         self.scale.deinit();
         self.rotation.deinit();
@@ -219,7 +217,7 @@ pub const PinchArea = struct {
 
 /// The topmost enabled PinchArea at `p` (window coordinates).
 fn pinchAreaAt(item: *Item, p: Point) ?*PinchArea {
-    if (!item.visible.get()) return null;
+    if (!item.visible.get() or !item.enabled.get()) return null;
     var found: ?*PinchArea = null;
     var it = item.first_child;
     while (it) |c| : (it = c.next_sibling) {
@@ -228,7 +226,7 @@ fn pinchAreaAt(item: *Item, p: Point) ?*PinchArea {
     if (found) |a| return a;
     if (item.vtable != &PinchArea.vtable) return null;
     const self: *PinchArea = @fieldParentPtr("item", item);
-    if (!self.enabled.get()) return null;
+    if (!self.item.isEnabled()) return null;
     const local = item.fromWindow(p);
     if (!(Rect{ .width = item.width.get(), .height = item.height.get() }).contains(local)) return null;
     return self;
@@ -243,7 +241,6 @@ pub const SwipeDirection = enum { left, right, up, down };
 /// is in it (buttons still click). Draws nothing.
 pub const SwipeArea = struct {
     item: Item = .init(&vtable),
-    enabled: Property(bool) = .init(true),
     distance: Property(f32) = .init(40),
     swiping: Property(bool) = .init(false),
     offset_x: Property(f32) = .init(0),
@@ -258,7 +255,6 @@ pub const SwipeArea = struct {
 
     pub fn deinit(self: *SwipeArea) void {
         self.item.deinit();
-        self.enabled.deinit();
         self.distance.deinit();
         self.swiping.deinit();
         self.offset_x.deinit();
@@ -278,7 +274,7 @@ pub const SwipeArea = struct {
     /// What is in it gets the press; once it moves, the swipe takes over.
     fn inputEventFilter(i: *Item, event: input.PointerEvent, _: *Window) input.InputEventFilterResult {
         const self = of(i);
-        if (!self.enabled.get()) return .forward_and_ignore;
+        if (!self.item.isEnabled()) return .forward_and_ignore;
         switch (event) {
             .pressed => |p| {
                 if (p.button != .left) return .forward_and_ignore;
@@ -306,7 +302,7 @@ pub const SwipeArea = struct {
 
     fn inputEvent(i: *Item, event: input.PointerEvent, _: *Window) input.InputEventResult {
         const self = of(i);
-        if (!self.enabled.get()) return .ignored;
+        if (!self.item.isEnabled()) return .ignored;
         switch (event) {
             .pressed => |p| {
                 if (p.button != .left) return .ignored;

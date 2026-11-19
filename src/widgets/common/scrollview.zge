@@ -7,7 +7,6 @@ import { Style } from "style.zge";
 // A scrolling area with scroll bars. Its children are its content; the
 // content is as tall as their layout needs.
 export component ScrollView inherits Rectangle {
-    var in <bool> enabled: true;
     var in-out <length> viewport-x <=> flick.viewport-x;
     var in-out <length> viewport-y <=> flick.viewport-y;
     var out <length> viewport-width: flick.viewport-width;
@@ -195,7 +194,6 @@ export component ScrollBar inherits Rectangle {
     var in <bool> vertical: true;
     var in <float> size: 0.25;
     var in-out <float> position;
-    var in <bool> enabled: true;
     // The user moved it.
     callback scrolled(float);
 

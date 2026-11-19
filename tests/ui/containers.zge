@@ -18,7 +18,7 @@ component Card inherits Rectangle {
 
 export component Containers inherits Window {
     width: 320px;
-    height: 420px;
+    height: 470px;
     background: Palette.background;
     var in-out <int> tab;
     var in-out <int> amount: 5;
@@ -26,6 +26,10 @@ export component Containers inherits Window {
     var in-out <int> pages: 20;
     var out <length> list-height: list.viewport-height;
     var in-out <length> list-scroll <=> list.viewport-y;
+    var in-out <bool> panel-enabled: true;
+    var in-out <int> inside-clicks;
+    // Read through the layout that holds it.
+    var out <bool> inside-enabled: inside.enabled;
 
     VerticalLayout {
         padding: 10px;
@@ -57,5 +61,10 @@ export component Containers inherits Window {
             Spinner { width: 24px; }
         }
         ProgressIndicator { indeterminate: true; }
+        // Disabled with what is inside it.
+        panel := HorizontalLayout {
+            enabled: root.panel-enabled;
+            inside := Button { text: "Inside"; clicked => { root.inside-clicks += 1; } }
+        }
     }
 }

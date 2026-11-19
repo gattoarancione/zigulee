@@ -10,7 +10,6 @@ export component SpinBox inherits Rectangle {
     var in <int> minimum: 0;
     var in <int> maximum: 100;
     var in <int> step: 1;
-    var in <bool> enabled: true;
     var in-out <int> value;
     var out <bool> has-focus: fs.has-focus;
     // Called when the user changes the value.

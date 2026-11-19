@@ -66,7 +66,6 @@ pub const TextInput = struct {
     font_size: Property(f32) = .init(14),
     /// Pixels added after each character.
     letter_spacing: Property(f32) = .init(0),
-    enabled: Property(bool) = .init(true),
     has_focus: Property(bool) = .init(false),
     /// Text can be selected and copied but not changed.
     read_only: Property(bool) = .init(false),
@@ -126,7 +125,7 @@ pub const TextInput = struct {
         if (focused_input.getUntracked() == self) focused_input.set(null);
         self.blink.deinit();
         self.item.deinit();
-        inline for (.{ "text", "font", "font_family", "font_weight", "color", "font_size", "letter_spacing", "enabled", "has_focus", "read_only", "single_line", "wrap", "horizontal_alignment", "cursor_position", "anchor_position", "selection_background_color", "caret_on", "preedit", "scroll_x", "scroll_y", "input_type" }) |f|
+        inline for (.{ "text", "font", "font_family", "font_weight", "color", "font_size", "letter_spacing", "has_focus", "read_only", "single_line", "wrap", "horizontal_alignment", "cursor_position", "anchor_position", "selection_background_color", "caret_on", "preedit", "scroll_x", "scroll_y", "input_type" }) |f|
             @field(self, f).deinit();
         self.buffer.deinit(self.gpa);
         self.preedit_buffer.deinit(self.gpa);
@@ -466,7 +465,7 @@ pub const TextInput = struct {
 
     /// An I-beam over text that can be selected.
     fn mouseCursor(i: *Item) input.MouseCursor {
-        return if (parent(i).enabled.get()) .text else .default;
+        return if (i.isEnabled()) .text else .default;
     }
 
     fn parent(i: *Item) *TextInput {
@@ -498,7 +497,7 @@ pub const TextInput = struct {
     }
 
     fn acceptsFocus(i: *Item) bool {
-        return parent(i).enabled.get();
+        return i.isEnabled();
     }
 
     fn inputEvent(i: *Item, event: input.PointerEvent, w: *Window) input.InputEventResult {
@@ -620,7 +619,7 @@ pub const TextInput = struct {
 
     fn keyEvent(i: *Item, kind: input.KeyEventKind, event: input.KeyEvent, _: *Window) input.EventResult {
         const self = parent(i);
-        if (kind != .pressed or !self.enabled.get()) return .reject;
+        if (kind != .pressed or !self.item.isEnabled()) return .reject;
         const text = event.text;
         const m = event.modifiers;
         const shift = m.shift;

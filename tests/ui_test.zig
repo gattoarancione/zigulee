@@ -735,6 +735,27 @@ test "containers: @children, ListView, TabWidget, SpinBox" {
     try testing.expectEqual(@as(i32, 0), app.amount.get());
     H.click(w, spin.x + spin.width - 17, spin.y + spin.height - 8);
     try testing.expectEqual(@as(i32, 0), app.amount.get());
+
+    // A disabled layout: the button in it reads as disabled and ignores
+    // clicks, though its own `enabled` is still true.
+    const inside = H.abs(app.inside.rootItem());
+    const x = inside.x + inside.width / 2;
+    const y = inside.y + inside.height / 2;
+    H.click(w, x, y);
+    try testing.expectEqual(@as(i32, 1), app.inside_clicks.get());
+    try testing.expect(app.inside_enabled.get());
+    app.panel_enabled.set(false);
+    try testing.expect(!app.inside_enabled.get());
+    try testing.expect(app.inside.rootItem().enabled.get());
+    H.click(w, x, y);
+    try testing.expectEqual(@as(i32, 1), app.inside_clicks.get());
+    // Nor can it take focus.
+    var it = app.inside.rootItem().first_child;
+    while (it) |c| : (it = c.next_sibling) try testing.expect(!c.acceptsFocus());
+    app.panel_enabled.set(true);
+    try testing.expect(app.inside_enabled.get());
+    H.click(w, x, y);
+    try testing.expectEqual(@as(i32, 2), app.inside_clicks.get());
 }
 
 test "functions: declared, public, with arguments and results" {
