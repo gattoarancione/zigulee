@@ -49,6 +49,10 @@ pub const Provider = struct {
         /// Runs `code` in the page; the result comes through
         /// `reportJavaScript`, in order.
         run_javascript: *const fn (ctx: ?*anyopaque, native: *Native, code: []const u8) void,
+        /// Stores a cookie for the web views (a `Set-Cookie` header's
+        /// value, for `url`: HttpOnly and Secure kept); `reportCookieStored`
+        /// once it is, or could not be. Null: not on this platform.
+        set_cookie: ?*const fn (ctx: ?*anyopaque, native: *Native, url: []const u8, cookie: []const u8) void = null,
     };
 };
 
@@ -125,6 +129,18 @@ pub fn reportHistory(native: *Provider.Native, can_go_back: bool, can_go_forward
     v.can_go_forward.set(can_go_forward);
 }
 
+/// A `set_cookie` is done: stored, or not (`ok` false: it could not be
+/// read). Pages held for the cookies load once they all are.
+pub fn reportCookieStored(native: *Provider.Native, ok: bool) void {
+    const v = find(native) orelse return;
+    if (!ok) log.warn("web view: a cookie could not be set", .{});
+    v.storing_cookies -|= 1;
+    if (v.storing_cookies == 0 and v.held) {
+        v.held = false;
+        v.show();
+    }
+}
+
 /// The result of a `run_javascript` (as text: a string as it is, other
 /// values as the page would print them), or its error.
 pub fn reportJavaScript(native: *Provider.Native, result: []const u8, failed: bool) void {
@@ -167,6 +183,13 @@ pub const WebView = struct {
     title_buffer: StringBuffer = .{},
     error_buffer: StringBuffer = .{},
     result_buffer: StringBuffer = .{},
+    /// Cookies set before there was a native view, sent when there is
+    /// (each its URL, then its value).
+    cookies: std.ArrayList([]const u8) = .empty,
+    /// Cookies sent and not stored yet: pages wait for them.
+    storing_cookies: u32 = 0,
+    /// A page waits for the cookies.
+    held: bool = false,
 
     const Source = struct { url: u64 = 0, html: u64 = 0 };
     const Placement = struct { rect: Rect, visible: bool };
@@ -193,6 +216,8 @@ pub const WebView = struct {
         self.item.deinit();
         inline for (.{ "url", "html", "title", "loading", "can_go_back", "can_go_forward", "error_text", "available" }) |f| @field(self, f).deinit();
         inline for (.{ "url_buffer", "title_buffer", "error_buffer", "result_buffer" }) |f| @field(self, f).deinit(self.gpa);
+        for (self.cookies.items) |s| self.gpa.free(s);
+        self.cookies.deinit(self.gpa);
     }
 
     fn source(self: *WebView) Source {
@@ -210,6 +235,10 @@ pub const WebView = struct {
     fn show(self: *WebView) void {
         const p = provider orelse return;
         const n = self.native orelse return;
+        if (self.storing_cookies > 0) {
+            self.held = true;
+            return;
+        }
         const html = self.html.getUntracked();
         const url = self.url.getUntracked();
         if (html.len > 0) {
@@ -231,6 +260,7 @@ pub const WebView = struct {
             };
             self.available.set(true);
             self.placed = null;
+            self.sendCookies();
             self.show();
         }
         const pos = self.item.absolutePosition();
@@ -246,6 +276,8 @@ pub const WebView = struct {
         const n = self.native orelse return;
         self.native = null;
         self.failed_in = null;
+        self.storing_cookies = 0;
+        self.held = false;
         if (provider) |p| p.vtable.destroy(p.ctx, n);
     }
 
@@ -276,6 +308,47 @@ pub const WebView = struct {
         p.vtable.run_javascript(p.ctx, n, code);
     }
 
+    /// Stores a cookie for `url`, as a server's `Set-Cookie` header would
+    /// (`"session=abc; Path=/; Secure; HttpOnly"`): a session the app has
+    /// natively handed over, HttpOnly included (which the page's
+    /// JavaScript cannot set). Pages loaded after it wait until it is
+    /// stored. Before the web view is made, kept until it is.
+    pub fn setCookie(self: *WebView, url: []const u8, cookie: []const u8) void {
+        const p = provider orelse return;
+        if (p.vtable.set_cookie == null) {
+            log.warn("web view: cookies cannot be set on this platform", .{});
+            return;
+        }
+        if (self.native == null) {
+            const u = self.gpa.dupe(u8, url) catch return;
+            const c = self.gpa.dupe(u8, cookie) catch {
+                self.gpa.free(u);
+                return;
+            };
+            self.cookies.appendSlice(self.gpa, &.{ u, c }) catch {
+                self.gpa.free(u);
+                self.gpa.free(c);
+            };
+            return;
+        }
+        self.storing_cookies += 1;
+        p.vtable.set_cookie.?(p.ctx, self.native.?, url, cookie);
+    }
+
+    /// The cookies kept until there was a native view.
+    fn sendCookies(self: *WebView) void {
+        const p = provider orelse return;
+        const set = p.vtable.set_cookie orelse return;
+        const n = self.native orelse return;
+        var i: usize = 0;
+        while (i + 1 < self.cookies.items.len) : (i += 2) {
+            self.storing_cookies += 1;
+            set(p.ctx, n, self.cookies.items[i], self.cookies.items[i + 1]);
+        }
+        for (self.cookies.items) |s| self.gpa.free(s);
+        self.cookies.clearRetainingCapacity();
+    }
+
     const vtable: item_mod.ItemVTable = .{ .name = "WebView" };
 };
 
@@ -299,6 +372,10 @@ const Fake = struct {
     token: u8 = 0,
     /// Makes none (as without the platform's web engine).
     refuse: bool = false,
+    /// The cookies asked for, each `url|cookie`.
+    cookies: [4][64]u8 = undefined,
+    cookie_lens: [4]usize = undefined,
+    cookie_count: usize = 0,
 
     fn provider(self: *Fake) Provider {
         return .{ .ctx = self, .vtable = &.{
@@ -312,6 +389,7 @@ const Fake = struct {
             .reload = reloadIt,
             .stop = noop,
             .run_javascript = runJs,
+            .set_cookie = setCookie,
         } };
     }
     fn of(ctx: ?*anyopaque) *Fake {
@@ -347,6 +425,15 @@ const Fake = struct {
     fn runJs(ctx: ?*anyopaque, n: *Provider.Native, code: []const u8) void {
         of(ctx).code_len = code.len;
         reportJavaScript(n, "42", false);
+    }
+    fn setCookie(ctx: ?*anyopaque, _: *Provider.Native, url: []const u8, cookie: []const u8) void {
+        const self = of(ctx);
+        const s = std.fmt.bufPrint(&self.cookies[self.cookie_count], "{s}|{s}", .{ url, cookie }) catch unreachable;
+        self.cookie_lens[self.cookie_count] = s.len;
+        self.cookie_count += 1;
+    }
+    fn cookieAt(self: *const Fake, i: usize) []const u8 {
+        return self.cookies[i][0..self.cookie_lens[i]];
     }
     fn shown(self: *const Fake) []const u8 {
         return self.loaded[0..self.loaded_len];
@@ -439,6 +526,50 @@ test "a web view: made in its window, placed, loading, following the page" {
     setProvider(null);
     try testing.expectEqual(@as(usize, 1), fake.destroyed);
     try testing.expect(!view.available.get());
+}
+
+test "cookies: kept until the web view is made, and pages wait until they are stored" {
+    const gpa = testing.allocator;
+    var fake: Fake = .{};
+    setProvider(fake.provider());
+    defer setProvider(null);
+    var view: WebView = undefined;
+    view.init(gpa);
+    defer view.deinit();
+    var window: Window = undefined;
+    window.init(gpa, .{ .width = 300, .height = 200 });
+    defer window.deinit();
+    var host: u8 = 0;
+    window.native_view = &host;
+
+    // Set before there is a native view (the app's start): kept.
+    var session = "session=abc; Path=/; Secure; HttpOnly".*;
+    view.setCookie("https://example.com", &session);
+    @memset(&session, 'x'); // the caller's text may go
+    view.url.set("https://example.com/account");
+    runChangeHandlers();
+    try testing.expectEqual(@as(usize, 0), fake.cookie_count);
+
+    window.rootItem().appendChild(&view.item);
+    view.item.width.set(200);
+    view.item.height.set(100);
+    syncWindow(&window);
+    try testing.expectEqual(@as(usize, 1), fake.cookie_count);
+    try testing.expectEqualStrings("https://example.com|session=abc; Path=/; Secure; HttpOnly", fake.cookieAt(0));
+    // The page waits for it.
+    try testing.expectEqualStrings("", fake.shown());
+    const n: *Provider.Native = &fake.token;
+    reportCookieStored(n, true);
+    try testing.expectEqualStrings("https://example.com/account", fake.shown());
+
+    // Set once it is made: sent now, and the next page waits too.
+    view.setCookie("https://example.com", "theme=dark");
+    try testing.expectEqual(@as(usize, 2), fake.cookie_count);
+    view.url.set("https://example.com/settings");
+    runChangeHandlers();
+    try testing.expectEqualStrings("https://example.com/account", fake.shown());
+    reportCookieStored(n, false); // not stored: the page loads all the same
+    try testing.expectEqualStrings("https://example.com/settings", fake.shown());
 }
 
 test "a web view the backend cannot make: not available" {

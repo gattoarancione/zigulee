@@ -34,6 +34,7 @@ pub const provider: webview.Provider = .{ .vtable = &.{
     .reload = reload,
     .stop = stop,
     .run_javascript = runJavascript,
+    .set_cookie = setCookie,
 } };
 
 /// What a backend puts in `native_view`: its X window, and its physical
@@ -111,6 +112,20 @@ const Fns = struct {
     jsc_value_to_json: *const fn (*JSValue, c_uint) callconv(.c) ?[*:0]u8,
 };
 
+/// For cookies (WebKitGTK 2.20, libsoup 2.70 or 3): without them, cookies
+/// are not set, the rest works.
+const CookieFns = struct {
+    webkit_web_view_get_context: *const fn (*Widget) callconv(.c) *anyopaque,
+    webkit_web_context_get_cookie_manager: *const fn (*anyopaque) callconv(.c) *anyopaque,
+    webkit_cookie_manager_add_cookie: *const fn (*anyopaque, *anyopaque, ?*anyopaque, AsyncReady, ?*anyopaque) callconv(.c) void,
+    webkit_cookie_manager_add_cookie_finish: *const fn (*anyopaque, *anyopaque, *?*GError) callconv(.c) c_int,
+    soup_cookie_new: *const fn ([*:0]const u8, [*:0]const u8, [*:0]const u8, [*:0]const u8, c_int) callconv(.c) ?*anyopaque,
+    soup_cookie_set_http_only: *const fn (*anyopaque, c_int) callconv(.c) void,
+    soup_cookie_set_secure: *const fn (*anyopaque, c_int) callconv(.c) void,
+    soup_cookie_set_same_site_policy: *const fn (*anyopaque, c_int) callconv(.c) void,
+    soup_cookie_free: *const fn (*anyopaque) callconv(.c) void,
+};
+
 const gtk_window_popup = 1;
 // WebKitLoadEvent.
 const load_started = 0;
@@ -120,6 +135,7 @@ const network_error_cancelled = 302;
 const revert_to_parent = 2;
 
 var lib: Fns = undefined;
+var cookie_lib: ?CookieFns = null;
 var state: enum { untried, ready, missing } = .untried;
 
 /// WebKitGTK with GTK started, or null without them (tried once).
@@ -137,6 +153,16 @@ fn library() ?*const Fns {
                 return null;
             }));
         }
+        cookie_lib = blk: {
+            var fns: CookieFns = undefined;
+            inline for (@typeInfo(CookieFns).@"struct".fields) |f| {
+                @field(fns, f.name) = @ptrCast(@alignCast(c.dlsym(handle, f.name ++ "") orelse {
+                    log.info("WebKitGTK has no {s}: cookies are not set", .{f.name});
+                    break :blk null;
+                }));
+            }
+            break :blk fns;
+        };
         // In the zigulee window's X server (not on Wayland, even if there).
         lib.gdk_set_allowed_backends("x11");
         if (lib.gtk_init_check(null, null) == 0) {
@@ -332,6 +358,61 @@ fn runJavascript(_: ?*anyopaque, native: *Native, code: []const u8) void {
     lib.webkit_web_view_evaluate_javascript(v.web, code.ptr, @intCast(code.len), null, null, null, &scriptFinished, @ptrFromInt(v.id));
 }
 
+// ---- Cookies ----
+
+/// `cookie` (a `Set-Cookie` text) read for `url`, into the web context's
+/// cookies (every web view's here); reported stored once WebKit says so.
+fn setCookie(_: ?*anyopaque, native: *Native, url: []const u8, cookie: []const u8) void {
+    const v = of(native);
+    const l = cookie_lib orelse return webview.reportCookieStored(native, false);
+    const parsed = zigulee.core.cookie.parse(cookie, url) orelse return webview.reportCookieStored(native, false);
+    var arena: std.heap.ArenaAllocator = .init(gpa);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const z = struct {
+        fn f(al: std.mem.Allocator, s: []const u8) ?[*:0]const u8 {
+            return (al.dupeZ(u8, s) catch return null).ptr;
+        }
+    }.f;
+    // A leading dot: its subdomains too.
+    const domain = if (parsed.host_only) parsed.domain else std.mem.concat(a, u8, &.{ ".", parsed.domain }) catch return webview.reportCookieStored(native, false);
+    const now = unixNow();
+    // Seconds it lasts (-1: the session).
+    const max_age: c_int = if (parsed.expiresAt(now)) |at| @intCast(std.math.clamp(at - now, 0, std.math.maxInt(c_int))) else -1;
+    const soup = l.soup_cookie_new(
+        z(a, parsed.name) orelse return webview.reportCookieStored(native, false),
+        z(a, parsed.value) orelse return webview.reportCookieStored(native, false),
+        z(a, domain) orelse return webview.reportCookieStored(native, false),
+        z(a, parsed.path) orelse return webview.reportCookieStored(native, false),
+        max_age,
+    ) orelse return webview.reportCookieStored(native, false);
+    defer l.soup_cookie_free(soup);
+    l.soup_cookie_set_http_only(soup, @intFromBool(parsed.http_only));
+    l.soup_cookie_set_secure(soup, @intFromBool(parsed.secure));
+    if (parsed.same_site != .unset) l.soup_cookie_set_same_site_policy(soup, switch (parsed.same_site) {
+        .none => 0,
+        .lax => 1,
+        .strict, .unset => 2,
+    });
+    const manager = l.webkit_web_context_get_cookie_manager(l.webkit_web_view_get_context(v.web));
+    l.webkit_cookie_manager_add_cookie(manager, soup, null, &cookieAdded, @ptrFromInt(v.id));
+}
+
+fn cookieAdded(manager: ?*anyopaque, result: *anyopaque, data: ?*anyopaque) callconv(.c) void {
+    var err: ?*GError = null;
+    const stored = cookie_lib.?.webkit_cookie_manager_add_cookie_finish(manager.?, result, &err) != 0;
+    if (err) |e| lib.g_error_free(e);
+    const v = byId(data) orelse return;
+    webview.reportCookieStored(v.native(), stored);
+}
+
+/// Seconds since 1970 (UTC).
+fn unixNow() i64 {
+    var ts: c.timespec = undefined;
+    if (c.clock_gettime(.REALTIME, &ts) != 0) return 0;
+    return ts.sec;
+}
+
 fn scriptFinished(_: ?*anyopaque, result: *anyopaque, data: ?*anyopaque) callconv(.c) void {
     const v = byId(data) orelse return;
     var err: ?*GError = null;
@@ -519,4 +600,17 @@ test "a page given as text in WebKitGTK: loaded, its title, JavaScript run in it
             return Got.errors > 0;
         }
     }.f, &view);
+
+    // A cookie (HttpOnly, for the session: not kept on disk), then a page
+    // that waits for it.
+    if (cookie_lib == null) return;
+    view.setCookie("https://zigulee.test/", "zigulee-test=1; Path=/; Secure; HttpOnly");
+    view.html.set("<title>After</title>");
+    try testing.expect(view.storing_cookies == 1);
+    try pump(struct {
+        fn f(vw: *webview.WebView) bool {
+            return std.mem.eql(u8, vw.title.getUntracked(), "After") and !vw.loading.getUntracked();
+        }
+    }.f, &view);
+    try testing.expectEqual(@as(u32, 0), view.storing_cookies);
 }

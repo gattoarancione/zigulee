@@ -30,6 +30,7 @@ pub const provider: webview.Provider = .{ .vtable = &.{
     .reload = reload,
     .stop = stop,
     .run_javascript = runJavascript,
+    .set_cookie = setCookie,
 } };
 
 const ios = builtin.os.tag == .ios;
@@ -191,6 +192,56 @@ fn asText(result: id) id {
     return msg(id, msg(id, msg(id, class("NSString"), "alloc", .{}), "initWithData:encoding:", .{ data, @as(usize, 4) }), "autorelease", .{});
 }
 
+// ---- Cookies ----
+
+/// The cookies of one `set_cookie` still being stored, and their web view.
+const Storing = struct { view: *View, left: usize };
+
+/// The completion block of `setCookie:` (WebKit copies it: no helpers
+/// needed for a plain pointer).
+const StoredBlock = extern struct {
+    isa: ?*const anyopaque = &_NSConcreteStackBlock,
+    flags: c_int = 0,
+    reserved: c_int = 0,
+    invoke: *const fn (*StoredBlock) callconv(.c) void = stored,
+    descriptor: *const Descriptor = &the_descriptor,
+    storing: *Storing,
+
+    const Descriptor = extern struct { reserved: c_ulong = 0, size: c_ulong = @sizeOf(StoredBlock) };
+    const the_descriptor: Descriptor = .{};
+};
+
+/// Read as a server's `Set-Cookie` header for `url` would be (HttpOnly,
+/// Secure, the domain and path from the URL unless it says), into the
+/// web views' cookie store: the one every WKWebView of the app shares.
+fn setCookie(_: ?*anyopaque, native: *Native, url: []const u8, cookie: []const u8) void {
+    const v = of(native);
+    const pool = objc.objc_autoreleasePoolPush();
+    defer objc.objc_autoreleasePoolPop(pool);
+    const u = msg(id, class("NSURL"), "URLWithString:", .{objc.nsString(url)});
+    if (u == null) return webview.reportCookieStored(native, false);
+    const fields = msg(id, class("NSDictionary"), "dictionaryWithObject:forKey:", .{ objc.nsString(cookie), objc.nsString("Set-Cookie") });
+    const cookies = msg(id, class("NSHTTPCookie"), "cookiesWithResponseHeaderFields:forURL:", .{ fields, u });
+    const count = if (cookies != null) msg(usize, cookies, "count", .{}) else 0;
+    if (count == 0) return webview.reportCookieStored(native, false);
+    const storing = gpa.create(Storing) catch return webview.reportCookieStored(native, false);
+    storing.* = .{ .view = v, .left = count };
+    const store = msg(id, msg(id, msg(id, v.wk, "configuration", .{}), "websiteDataStore", .{}), "httpCookieStore", .{});
+    for (0..count) |i| {
+        var block: StoredBlock = .{ .storing = storing };
+        msg(void, store, "setCookie:completionHandler:", .{ msg(id, cookies, "objectAtIndex:", .{i}), &block });
+    }
+}
+
+fn stored(block: *StoredBlock) callconv(.c) void {
+    const s = block.storing;
+    s.left -= 1;
+    if (s.left > 0) return;
+    const v = s.view;
+    gpa.destroy(s);
+    if (alive(v)) webview.reportCookieStored(@ptrCast(v), true);
+}
+
 // ---- The delegate ----
 
 var delegate_object: id = null;
@@ -259,6 +310,40 @@ fn spin(comptime done: fn (*webview.WebView) bool, view: *webview.WebView) !void
         _ = msg(bool, loop, "runMode:beforeDate:", .{ mode, msg(id, class("NSDate"), "dateWithTimeIntervalSinceNow:", .{@as(f64, 0.01)}) });
     }
     return error.Timeout;
+}
+
+test "a cookie stored (HttpOnly) before the page loads" {
+    if (ios) return error.SkipZigTest;
+    webview.setProvider(provider);
+    defer webview.setProvider(null);
+    var view: webview.WebView = undefined;
+    view.init(testing.allocator);
+    defer view.deinit();
+    var ui: zigulee.core.Window = undefined;
+    ui.init(testing.allocator, .{ .width = 200, .height = 100 });
+    defer ui.deinit();
+    const host = msg(id, msg(id, class("NSView"), "alloc", .{}), "initWithFrame:", .{CGRect{ .size = .{ .width = 200, .height = 100 } }});
+    defer msg(void, host, "release", .{});
+    ui.native_view = host;
+    ui.rootItem().appendChild(&view.item);
+    view.item.width.set(200);
+    view.item.height.set(60);
+    // A session cookie (no expiry: not kept on disk) for a reserved domain.
+    view.setCookie("https://zigulee.test/", "zigulee-test=1; Path=/; Secure; HttpOnly");
+    view.html.set("<title>After</title>");
+    webview.syncWindow(&ui);
+    try testing.expect(view.native != null);
+    try testing.expect(view.storing_cookies == 1 and view.held);
+    // Stored, then the page loads.
+    try spin(struct {
+        fn f(v: *webview.WebView) bool {
+            return std.mem.eql(u8, v.title.getUntracked(), "After") and !v.loading.getUntracked();
+        }
+    }.f, &view);
+    try testing.expectEqual(@as(u32, 0), view.storing_cookies);
+    // Not a cookie: nothing stored, nothing held.
+    view.setCookie("https://zigulee.test/", "");
+    try testing.expectEqual(@as(u32, 0), view.storing_cookies);
 }
 
 test "a page given as text: loaded, its title, JavaScript run in it" {

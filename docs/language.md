@@ -1706,6 +1706,13 @@ user clicks links or the site redirects.
 - **JavaScript:** `run-javascript(code)` runs code in the page. Its result
   arrives in `javascript-finished(result)` as text: strings as they are,
   other values as JSON. Errors go to `javascript-failed(error)`.
+- **Cookies:** `set-cookie(url, cookie)` stores a cookie for `url`, written
+  as a server's `Set-Cookie` header: `"session=abc; Path=/; Secure;
+  HttpOnly"`. An app that signed in natively hands its session to the
+  page this way, HttpOnly included, which the page's own JavaScript cannot
+  set. Pages loaded after it wait until it is stored, so set it before
+  `url`, even before the view shows. Not on the web: an `<iframe>` cannot
+  be given an HttpOnly cookie (it logs a warning).
 
 ```slint
 export component Help inherits Window {

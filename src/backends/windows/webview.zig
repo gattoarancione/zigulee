@@ -36,6 +36,7 @@ pub const provider: webview.Provider = .{ .vtable = &.{
     .reload = reload,
     .stop = stop,
     .run_javascript = runJavascript,
+    .set_cookie = setCookie,
 } };
 
 const gpa = std.heap.page_allocator;
@@ -103,6 +104,16 @@ const core_stop = 43;
 const core_add_document_title_changed = 46;
 const core_remove_document_title_changed = 47;
 const core_get_document_title = 48;
+// ICoreWebView2_2
+const core2_get_cookie_manager = 66;
+// ICoreWebView2CookieManager
+const cookies_create_cookie = 3;
+const cookies_add_or_update_cookie = 6;
+// ICoreWebView2Cookie
+const cookie_put_expires = 9;
+const cookie_put_is_http_only = 11;
+const cookie_put_same_site = 13;
+const cookie_put_is_secure = 15;
 // ICoreWebView2NavigationCompletedEventArgs
 const args_get_is_success = 3;
 const args_get_web_error_status = 4;
@@ -128,6 +139,7 @@ fn guid(comptime text: *const [36]u8) c.GUID {
 }
 
 const iid_unknown = guid("00000000-0000-0000-c000-000000000046");
+const iid_core_2 = guid("9e8f0cf8-e670-4b5e-b2bc-73e061e3184c");
 
 /// Each handler's interface (WebView2.h).
 fn iid(comptime kind: Kind) c.GUID {
@@ -227,6 +239,9 @@ const View = struct {
     rect: zigulee.core.Rect = .{},
     visible: bool = false,
     pending: ?Pending = null,
+    /// Cookies set before the controller was ready: each its URL, then
+    /// its `Set-Cookie` text. Stored before the page loads.
+    cookies: std.ArrayList([]u8) = .empty,
 
     const Pending = struct { text: []u8, html: bool };
 
@@ -293,6 +308,8 @@ fn create(_: ?*anyopaque, host: ?*anyopaque, _: *webview.WebView) ?*Native {
 fn forget(v: *View) void {
     if (std.mem.indexOfScalar(*View, views.items, v)) |i| _ = views.swapRemove(i);
     if (v.pending) |p| gpa.free(p.text);
+    for (v.cookies.items) |s| gpa.free(s);
+    v.cookies.deinit(gpa);
     gpa.destroy(v);
 }
 
@@ -447,6 +464,12 @@ fn controllerCreated(self: *Handler, hr: HRESULT, controller: ?*Object) callconv
         };
     }
     applyPlace(v);
+    var i: usize = 0;
+    while (i + 1 < v.cookies.items.len) : (i += 2) {
+        if (!storeCookie(v, v.cookies.items[i], v.cookies.items[i + 1])) log.warn("web view: a cookie could not be set", .{});
+    }
+    for (v.cookies.items) |s| gpa.free(s);
+    v.cookies.clearRetainingCapacity();
     if (v.pending) |p| {
         v.pending = null;
         defer gpa.free(p.text);
@@ -509,6 +532,79 @@ fn reload(_: ?*anyopaque, native: *Native) void {
 }
 fn stop(_: ?*anyopaque, native: *Native) void {
     if (of(native).core) |core| _ = call(HRESULT, core, core_stop, .{});
+}
+
+/// Stored with the cookie manager now if the page is ready, else kept
+/// until it is (and stored before it loads). WebView2 stores cookies in
+/// the order asked, before later navigations: stored as far as the
+/// element is concerned.
+fn setCookie(_: ?*anyopaque, native: *Native, url: []const u8, cookie: []const u8) void {
+    const v = of(native);
+    if (v.core == null) {
+        const u = gpa.dupe(u8, url) catch return webview.reportCookieStored(native, false);
+        const k = gpa.dupe(u8, cookie) catch {
+            gpa.free(u);
+            return webview.reportCookieStored(native, false);
+        };
+        v.cookies.appendSlice(gpa, &.{ u, k }) catch {
+            gpa.free(u);
+            gpa.free(k);
+            return webview.reportCookieStored(native, false);
+        };
+        return webview.reportCookieStored(native, true);
+    }
+    webview.reportCookieStored(native, storeCookie(v, url, cookie));
+}
+
+/// `cookie` (a `Set-Cookie` text) read for `url` and added to the
+/// profile's cookies: false if it could not be read or stored.
+fn storeCookie(v: *View, url: []const u8, text: []const u8) bool {
+    const core = v.core orelse return false;
+    const parsed = zigulee.core.cookie.parse(text, url) orelse return false;
+    var core2: ?*Object = null;
+    if (!ok(call(HRESULT, core, 0, .{ &iid_core_2, &core2 })) or core2 == null) return false;
+    defer release(core2);
+    var manager: ?*Object = null;
+    if (!ok(call(HRESULT, core2.?, core2_get_cookie_manager, .{&manager})) or manager == null) return false;
+    defer release(manager);
+
+    var arena: std.heap.ArenaAllocator = .init(gpa);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const wide = struct {
+        fn f(al: std.mem.Allocator, s: []const u8) ?[*:0]const u16 {
+            return (std.unicode.utf8ToUtf16LeAllocZ(al, s) catch return null).ptr;
+        }
+    }.f;
+    // A leading dot: its subdomains too.
+    const domain = if (parsed.host_only) parsed.domain else std.mem.concat(a, u8, &.{ ".", parsed.domain }) catch return false;
+    var cookie: ?*Object = null;
+    if (!ok(call(HRESULT, manager.?, cookies_create_cookie, .{
+        wide(a, parsed.name) orelse return false,
+        wide(a, parsed.value) orelse return false,
+        wide(a, domain) orelse return false,
+        wide(a, parsed.path) orelse return false,
+        &cookie,
+    })) or cookie == null) return false;
+    defer release(cookie);
+    const ck = cookie.?;
+    _ = call(HRESULT, ck, cookie_put_is_http_only, .{@as(c.BOOL, @intFromBool(parsed.http_only))});
+    _ = call(HRESULT, ck, cookie_put_is_secure, .{@as(c.BOOL, @intFromBool(parsed.secure))});
+    if (parsed.same_site != .unset) _ = call(HRESULT, ck, cookie_put_same_site, .{@as(i32, switch (parsed.same_site) {
+        .none => 0,
+        .lax => 1,
+        .strict, .unset => 2,
+    })});
+    if (parsed.expiresAt(unixNow())) |at| _ = call(HRESULT, ck, cookie_put_expires, .{@as(f64, @floatFromInt(at))});
+    return ok(call(HRESULT, manager.?, cookies_add_or_update_cookie, .{ck}));
+}
+
+/// Seconds since 1970 (UTC).
+fn unixNow() i64 {
+    var ft: c.FILETIME = undefined;
+    c.GetSystemTimeAsFileTime(&ft);
+    const ticks = (@as(i64, ft.dwHighDateTime) << 32) | ft.dwLowDateTime; // 100 ns since 1601
+    return @divFloor(ticks, 10_000_000) - 11_644_473_600;
 }
 
 /// `code` wrapped to report its result or its exception as JSON
@@ -662,6 +758,7 @@ test "window handles taken as they are, aligned or not" {
 }
 
 test "interface ids" {
+    try testing.expectEqual(@as(c_ulong, 0x9e8f0cf8), iid_core_2.Data1);
     const e = iid(.environment);
     try testing.expectEqual(@as(c_ulong, 0x4e8a3389), e.Data1);
     try testing.expectEqual(@as(c_ushort, 0xc9d8), e.Data2);

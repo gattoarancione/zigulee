@@ -641,7 +641,7 @@ Takes no child elements.
 
 ## WebView
 
-A web page: `url` loads (and follows the page's links and redirects), or `html` shows that text (and wins when set). `title`, `loading`, `can-go-back` and `can-go-forward` follow the page; `back()`, `forward()`, `reload()` and `stop()` act on it; `finished` is called when a page has loaded, `failed` when it could not (`error` says why). `run-javascript(code)` runs code in the page: `javascript-finished(result)` then, as text, or `javascript-failed(error)`. A native view placed over the element: it shows above everything (popups too), without rotation, opacity or effects, and is not clipped by scroll views. `available` tells whether the platform has web views: macOS and Windows (native and SDL3 backends; Windows needs the WebView2 runtime), Linux with X11 (native and SDL3 backends, with WebKitGTK installed), iOS and the web (an `<iframe>`, where other sites cannot be scripted or navigated); not on Wayland or KMS.
+A web page: `url` loads (and follows the page's links and redirects), or `html` shows that text (and wins when set). `title`, `loading`, `can-go-back` and `can-go-forward` follow the page; `back()`, `forward()`, `reload()` and `stop()` act on it; `finished` is called when a page has loaded, `failed` when it could not (`error` says why). `run-javascript(code)` runs code in the page: `javascript-finished(result)` then, as text, or `javascript-failed(error)`. `set-cookie(url, cookie)` stores a cookie for `url` as a server's `Set-Cookie` header would (`"session=abc; Path=/; Secure; HttpOnly"`): a session the app holds natively, handed over, HttpOnly included; pages loaded after it wait until it is stored (not on the web, where an `<iframe>` cannot be given one). A native view placed over the element: it shows above everything (popups too), without rotation, opacity or effects, and is not clipped by scroll views. `available` tells whether the platform has web views: macOS and Windows (native and SDL3 backends; Windows needs the WebView2 runtime), Linux with X11 (native and SDL3 backends, with WebKitGTK installed), iOS and the web (an `<iframe>`, where other sites cannot be scripted or navigated); not on Wayland or KMS.
 
 Takes no child elements.
 
@@ -663,7 +663,7 @@ Callbacks:
 - `javascript-finished(string)`
 - `javascript-failed(string)`
 
-Functions: `back()`, `forward()`, `reload()`, `stop()`, `run-javascript()`
+Functions: `back()`, `forward()`, `reload()`, `stop()`, `run-javascript()`, `set-cookie()`
 
 ## Camera
 

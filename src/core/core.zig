@@ -109,6 +109,7 @@ pub const audio = @import("audio/audio.zig");
 pub const video = @import("video/video.zig");
 /// Web pages (`WebView`).
 pub const webview = @import("webview.zig");
+pub const cookie = @import("cookie.zig");
 /// 3D scenes (`View3D`) and the renderer drawing them.
 pub const view3d = @import("view3d.zig");
 pub const raster3d = @import("raster3d.zig");
@@ -274,6 +275,7 @@ test {
     _ = map;
     _ = links;
     _ = webview;
+    _ = cookie;
     _ = view3d;
     _ = raster3d;
     _ = gltf;
