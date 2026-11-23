@@ -371,3 +371,21 @@ test "ternaries with literal branches compile to typed values" {
     const zig = try compileOk(arena.allocator(), "export component A { var in-out <int> n; var in <bool> up; callback go(); go => { n += up ? 1 : -1; } }");
     try testing.expect(std.mem.indexOf(u8, zig, "@as(i32, 1) else @as(i32, -(1))") != null);
 }
+
+test "a file imported by two paths is one file: its globals once" {
+    mem_files = .{
+        .files = &.{
+            .{ "shared/state.zge", "export global State { var in-out <string> name; }" },
+            // As the disk would give it, unnormalized.
+            .{ "pages/../shared/state.zge", "export global State { var in-out <string> name; }" },
+            .{ "pages/page.zge", "import { State } from \"../shared/state.zge\"; export component Page inherits Text { text: State.name; }" },
+        },
+    };
+    defer mem_files = .{ .files = &.{} };
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const zig = try compileOk(arena.allocator(), "import { State } from \"shared/state.zge\"; import { Page } from \"pages/page.zge\"; export component Main inherits Window { Page {} Text { text: State.name; } }");
+    // `shared/state.zge` and `pages/../shared/state.zge`: one State.
+    try testing.expectEqual(@as(usize, 1), std.mem.count(u8, zig, "const State = struct"));
+    try testing.expect(std.mem.indexOf(u8, zig, "State__1") == null);
+}

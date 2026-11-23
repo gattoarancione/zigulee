@@ -3921,8 +3921,8 @@ test zigName {
     try std.testing.expectEqualStrings("i32_", try zigName(a, "i32"));
 }
 
-/// `dir/path` with `/` separators (`path` alone if `dir` is empty).
+/// `path` from `dir` (`/` separators), with `.` and `..` worked out: a
+/// file reached two ways is one file (one module, its globals once).
 fn joinPath(arena: Allocator, dir: []const u8, path: []const u8) Allocator.Error![]const u8 {
-    if (dir.len == 0) return path;
-    return std.fmt.allocPrint(arena, "{s}/{s}", .{ dir, path });
+    return std.fs.path.resolvePosix(arena, &.{ dir, path });
 }
