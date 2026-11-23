@@ -228,6 +228,20 @@ fn loadCounting(gpa: Allocator, url: []const u8, options: Options, progress: ?*P
 pub const Fetcher = struct { start: *const fn (r: *Request) bool };
 pub var fetcher: ?Fetcher = null;
 
+/// Requests not yet freed: a cancelled one lives on until its worker is
+/// done with it.
+var alive: std.atomic.Value(usize) = .init(0);
+
+/// For tests: waits until every request is freed, cancelled ones included
+/// (their workers free them, perhaps after the test is over).
+pub fn waitForRequests() void {
+    for (0..2500) |_| {
+        if (alive.load(.acquire) == 0) return;
+        var t: std.Io.Threaded = .init_single_threaded;
+        t.io().sleep(.fromMilliseconds(2), .awake) catch {};
+    }
+}
+
 /// A load in progress: `start` it, then `poll` until it is done (or
 /// `cancel` it). It loads on a thread of its own when there are threads.
 pub const Request = struct {
@@ -269,6 +283,7 @@ pub const Request = struct {
             copied += 1;
         }
         r.* = .{ .gpa = gpa, .url = own_url, .options = .{ .user_agent = ua, .headers = headers, .cache_path = cache, .max_age_s = options.max_age_s } };
+        _ = alive.fetchAdd(1, .monotonic);
         if (threaded) {
             if (std.Thread.spawn(.{}, run, .{r})) |t| {
                 t.detach();
@@ -327,6 +342,7 @@ pub const Request = struct {
         for (r.options.headers) |h| r.gpa.free(h);
         r.gpa.free(r.options.headers);
         r.gpa.destroy(r);
+        _ = alive.fetchSub(1, .release);
     }
 
     /// How far it has come, 0 to 1 (1 when done; 0 while the size is not

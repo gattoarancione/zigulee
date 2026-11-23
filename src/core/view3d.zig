@@ -429,7 +429,18 @@ pub const View3D = struct {
                 hasher.update(std.mem.asBytes(&[_]usize{ @intFromPtr(t.pixels.ptr), t.pixels.len, t.width, t.version }));
             }
         }
-        for (scene.lights) |l| hasher.update(std.mem.asBytes(&l));
+        // Field by field: a Vec3's fourth lane, a union's tail past its
+        // smaller field and the padding after its tag are undefined.
+        for (scene.lights) |l| switch (l) {
+            .directional => |d| {
+                hasher.update(std.mem.asBytes(&[_]f32{ 0, d.direction[0], d.direction[1], d.direction[2], d.brightness }));
+                hasher.update(std.mem.asBytes(&d.color));
+            },
+            .point => |p| {
+                hasher.update(std.mem.asBytes(&[_]f32{ 1, p.position[0], p.position[1], p.position[2], p.brightness, p.range }));
+                hasher.update(std.mem.asBytes(&p.color));
+            },
+        };
         // Never 0 (nothing drawn).
         return hasher.final() | 1;
     }

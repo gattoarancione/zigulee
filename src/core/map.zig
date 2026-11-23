@@ -834,6 +834,8 @@ fn imagesDrawn(dl: *const DisplayList, out: []rendering.DisplayList.Command.Draw
 
 test "a map draws its tiles, and lower zoom levels while they come" {
     if (!loader.threaded) return error.SkipZigTest;
+    // Last: tiles cancelled while loading are freed by their workers.
+    defer loader.waitForRequests();
     var tiles = try TestTiles.init();
     defer tiles.deinit();
     var w: Window = undefined;
@@ -972,6 +974,8 @@ test "a map moves under the pointer, and places its markers and lines" {
 
 test "on a dense screen, a map takes the next zoom level's tiles at half size, or a server's @2x ones" {
     if (!loader.threaded) return error.SkipZigTest;
+    // Last: tiles cancelled while loading are freed by their workers.
+    defer loader.waitForRequests();
     var tiles = try TestTiles.init();
     defer tiles.deinit();
     var w: Window = undefined;
