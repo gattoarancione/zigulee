@@ -606,7 +606,9 @@ test "a page given as text in WebKitGTK: loaded, its title, JavaScript run in it
     if (cookie_lib == null) return;
     view.setCookie("https://zigulee.test/", "zigulee-test=1; Path=/; Secure; HttpOnly");
     view.html.set("<title>After</title>");
-    try testing.expect(view.storing_cookies == 1);
+    // The new page, as between frames: held for the cookie.
+    zigulee.core.runChangeHandlers();
+    try testing.expect(view.storing_cookies == 1 and view.held);
     try pump(struct {
         fn f(vw: *webview.WebView) bool {
             return std.mem.eql(u8, vw.title.getUntracked(), "After") and !vw.loading.getUntracked();
