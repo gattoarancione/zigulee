@@ -255,13 +255,30 @@ pub fn iosApp(b: *std.Build, o: IosAppOptions) IosApp {
     return .{ .exe = exe, .bundle = bundle.getDirectory().path(b, app_dir) };
 }
 
-/// The SDK of an iOS or Mac Catalyst target, for `module` (Zig finds the
-/// macOS one by itself).
+/// The SDK of an iOS or Mac Catalyst target, or of a macOS one other than
+/// the host (Intel from Apple silicon, say), which Zig finds by itself
+/// only when native. Null when Zig finds it, or with no SDK to be found
+/// (cross-compiling for macOS from another system without --sysroot).
+fn appleSdk(b: *std.Build, target: std.Build.ResolvedTarget) ?[]const u8 {
+    const os = target.result.os.tag;
+    if (os == .macos) {
+        if (target.query.isNative()) return null;
+        if (b.sysroot) |sysroot| return sysroot;
+        if (b.graph.host.result.os.tag != .macos) return null;
+        // The SDK native builds use (the command line tools' when both
+        // they and Xcode are installed): `xcrun --sdk macosx` can name a
+        // newer Xcode one whose headers Zig's clang doesn't parse yet.
+        return std.mem.trimEnd(u8, b.run(&.{ "xcrun", "--show-sdk-path" }), "\r\n");
+    }
+    if (os != .ios and os != .maccatalyst) return null;
+    return std.zig.system.darwin.getSdk(b.allocator, b.graph.io, &target.result) orelse
+        std.debug.panic("no SDK for {t}: install Xcode or its command line tools", .{os});
+}
+
+/// The SDK of `target` for `module`, when Zig doesn't find it (`appleSdk`).
 fn addAppleSdk(b: *std.Build, module: *std.Build.Module, target: std.Build.ResolvedTarget) void {
     const os = target.result.os.tag;
-    if (os != .ios and os != .maccatalyst) return;
-    const sdk = std.zig.system.darwin.getSdk(b.allocator, b.graph.io, &target.result) orelse
-        std.debug.panic("no SDK for {t}: install Xcode", .{os});
+    const sdk = appleSdk(b, target) orelse return;
     module.addLibraryPath(.{ .cwd_relative = b.pathJoin(&.{ sdk, "usr/lib" }) });
     if (os == .maccatalyst) module.addSystemFrameworkPath(.{ .cwd_relative = b.pathJoin(&.{ sdk, "System/iOSSupport/System/Library/Frameworks" }) });
     module.addSystemFrameworkPath(.{ .cwd_relative = b.pathJoin(&.{ sdk, "System/Library/Frameworks" }) });
@@ -1223,7 +1240,16 @@ pub fn build(b: *std.Build) void {
 
     // SDL3 backend. SDL is built from source by the Zig package manager (a
     // lazy dependency: fetched on first use).
-    if (!ios_target) if (b.lazyDependency("sdl", .{ .target = target, .optimize = optimize })) |sdl_dep| {
+    // SDL wants the SDK's paths for a macOS target other than the host.
+    const sdk: ?[]const u8 = if (target.result.os.tag == .macos) appleSdk(b, target) else null;
+    const sdl_dependency = if (sdk) |s| b.lazyDependency("sdl", .{
+        .target = target,
+        .optimize = optimize,
+        .system_include_path = std.Build.LazyPath{ .cwd_relative = b.pathJoin(&.{ s, "usr/include" }) },
+        .system_framework_path = std.Build.LazyPath{ .cwd_relative = b.pathJoin(&.{ s, "System/Library/Frameworks" }) },
+        .library_path = std.Build.LazyPath{ .cwd_relative = b.pathJoin(&.{ s, "usr/lib" }) },
+    }) else if (!ios_target) b.lazyDependency("sdl", .{ .target = target, .optimize = optimize }) else null;
+    if (sdl_dependency) |sdl_dep| {
         const sdl_lib = sdl_dep.artifact("SDL3");
         const translate = b.addTranslateC(.{
             .root_source_file = b.addWriteFiles().add("sdl3.h", "#include <SDL3/SDL.h>\n"),
@@ -1255,7 +1281,7 @@ pub fn build(b: *std.Build) void {
         const sdl3_test_step = b.step("test-sdl3", "Test the SDL3 backend (headless, no display needed)");
         sdl3_test_step.dependOn(&b.addRunArtifact(sdl3_tests).step);
         test_step.dependOn(sdl3_test_step);
-    };
+    }
 
     // Embedded smoke check: the core must compile for a bare-metal Cortex-M4.
     const mcu_target = b.resolveTargetQuery(.{
