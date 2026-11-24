@@ -153,10 +153,18 @@ Inherits `Rectangle`. A scrolling area with scroll bars. Its children are its co
 | `viewport-height` | length | out |  |  |
 | `visible-width` | length | out |  |  |
 | `visible-height` | length | out |  |  |
+| `snap-x` | length | in |  | Scrolling settles on multiples of these (0: anywhere), or, with `snap-to-items`, where the content says (a ListView's rows, a TableView's columns); on the content's ends too. |
+| `snap-y` | length | in |  |  |
+| `snap-to-items` | bool | in |  |  |
 
 Callbacks:
 
 - `scrolled()`: Called when the user scrolls.
+
+Functions:
+
+- `scroll-to-top()`: Scrolls to the top.
+- `scroll-to-bottom()`: Scrolls to the bottom, and keeps there as the content grows or its rows are measured, until scrolled elsewhere.
 
 ## ListView
 
@@ -306,6 +314,7 @@ Inherits `Rectangle`. A table of strings: `columns` are the headers, `rows` the 
 
 | Property | Type | Access | Default | Description |
 |---|---|---|---|---|
+| `snap-to-items` | bool | in |  | Scrolling settles on the rows' tops, and across on the columns' edges when `column-widths` gives them. |
 | `columns` | [string] | in |  |  |
 | `rows` | [[string]] | in |  |  |
 | `column-widths` | [length] | in |  |  |
@@ -327,6 +336,8 @@ Functions:
 - `select-all()`
 - `clear-selection()`
 - `set-selected(r: int, on: bool)`
+- `scroll-to-top()`: Scrolls to the first row, or the last (and keeps there as rows are added, until scrolled elsewhere).
+- `scroll-to-bottom()`
 - `column-width(c: int) -> length`
 - `column-x(c: int) -> length`
 
@@ -336,6 +347,7 @@ Inherits `Rectangle`. A table whose rows are yours: `TableView { columns: ["Name
 
 | Property | Type | Access | Default | Description |
 |---|---|---|---|---|
+| `snap-to-items` | bool | in |  | Scrolling settles on the rows' tops, and across on the columns' edges when `column-widths` gives them. |
 | `columns` | [string] | in |  |  |
 | `column-widths` | [length] | in |  |  |
 | `row-height` | length | in | `32px` |  |
@@ -351,6 +363,8 @@ Callbacks:
 
 Functions:
 
+- `scroll-to-top()`: Scrolls to the first row, or the last (and keeps there as rows are added, until scrolled elsewhere).
+- `scroll-to-bottom()`
 - `column-width(c: int) -> length`
 - `column-x(c: int) -> length`
 

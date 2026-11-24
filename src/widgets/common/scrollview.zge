@@ -13,8 +13,24 @@ export component ScrollView inherits Rectangle {
     var out <length> viewport-height: flick.viewport-height;
     var out <length> visible-width: flick.width;
     var out <length> visible-height: flick.height;
+    // Scrolling settles on multiples of these (0: anywhere), or, with
+    // `snap-to-items`, where the content says (a ListView's rows, a
+    // TableView's columns); on the content's ends too.
+    var in <length> snap-x;
+    var in <length> snap-y;
+    var in <bool> snap-to-items;
     // Called when the user scrolls.
     callback scrolled();
+
+    // Scrolls to the top.
+    public function scroll-to-top() {
+        flick.scroll-to-top();
+    }
+    // Scrolls to the bottom, and keeps there as the content grows or its
+    // rows are measured, until scrolled elsewhere.
+    public function scroll-to-bottom() {
+        flick.scroll-to-bottom();
+    }
 
     // Dragging or clicking a scroll bar: the thumb's middle follows the
     // pointer.
@@ -50,6 +66,9 @@ export component ScrollView inherits Rectangle {
         width: parent.width - 2px;
         height: parent.height - 2px;
         interactive: root.enabled;
+        snap-x: root.snap-x;
+        snap-y: root.snap-y;
+        snap-to-items: root.snap-to-items;
         flicked => { root.scrolled(); }
         @children
     }

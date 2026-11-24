@@ -1009,7 +1009,7 @@ pub const builtins = [_]Builtin{
     },
     .{
         .name = "Flickable",
-        .doc = "Scrolls its children (the viewport) by dragging or the mouse wheel. Taps still reach the children. With `snap-y`, scrolling settles on multiples of it, and the wheel moves by one.",
+        .doc = "Scrolls its children (the viewport) by dragging or the mouse wheel. Taps still reach the children. With `snap-x` or `snap-y`, scrolling settles on multiples of it; with `snap-to-items`, where the content says (a ListLayout's rows, under its pinned section header, and its columns when they have widths); either way on the content's ends too, and the wheel moves by one snap position. `scroll-to-top()` and `scroll-to-bottom()` scroll there; after `scroll-to-bottom()` it keeps at the bottom as the content's height changes (rows measured, rows added) until scrolled elsewhere.",
         .zig_type = "zigulee.items.Flickable",
         .init_call = "init(gpa)",
         .content = "viewport.item",
@@ -1019,9 +1019,15 @@ pub const builtins = [_]Builtin{
             .{ .name = "viewport-width", .ty = .length, .zig = "viewport.item.width" },
             .{ .name = "viewport-height", .ty = .length, .zig = "viewport.item.height" },
             .{ .name = "interactive", .ty = .bool, .zig = "interactive" },
+            .{ .name = "snap-x", .ty = .length, .zig = "snap_x" },
             .{ .name = "snap-y", .ty = .length, .zig = "snap_y" },
+            .{ .name = "snap-to-items", .ty = .bool, .zig = "snap_to_items" },
         },
         .callbacks = &.{.{ .name = "flicked", .zig = "flicked" }},
+        .functions = &.{
+            .{ .name = "scroll-to-top", .zig = "scrollToTop" },
+            .{ .name = "scroll-to-bottom", .zig = "scrollToBottom" },
+        },
     },
     .{
         .name = "Timer",

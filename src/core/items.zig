@@ -6,6 +6,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Property = @import("properties.zig").Property;
+const ChangeTracker = @import("properties.zig").ChangeTracker;
 const Callback = @import("callbacks.zig").Callback;
 const geometry = @import("geometry.zig");
 const Point = geometry.Point;
@@ -1545,15 +1546,25 @@ pub const Flickable = struct {
     item: Item = .init(&vtable),
     viewport: Viewport = .{},
     interactive: Property(bool) = .init(true),
-    /// Vertical positions settle on multiples of this (0: anywhere).
+    /// Horizontal and vertical positions settle on multiples of these
+    /// (0: anywhere), and on the content's ends.
+    snap_x: Property(f32) = .init(0),
     snap_y: Property(f32) = .init(0),
+    /// Positions settle where the content says (a list's rows, a table's
+    /// columns: `ItemVTable.snapPosition`), and on its ends.
+    snap_to_items: Property(bool) = .init(false),
     /// Called when a flick (kinetic scroll after release) starts.
     flicked: Callback(fn () void) = .{},
     gpa: Allocator,
     drag: Drag = .{},
     /// Where a snapping animation is taking the viewport (wheel steps
     /// add up from there).
+    heading_x: ?f32 = null,
     heading_y: ?f32 = null,
+    /// Following the content's end (`scrollToBottom`): where the viewport
+    /// was last sent.
+    following_end: ?f32 = null,
+    end_tracker: ChangeTracker(f32) = undefined,
 
     pub const drag_threshold = 8;
     pub const flick_duration_ms = 500;
@@ -1574,13 +1585,52 @@ pub const Flickable = struct {
     pub fn init(self: *Flickable, gpa: Allocator) void {
         self.* = .{ .gpa = gpa };
         self.item.appendChild(&self.viewport.item);
+        self.end_tracker.init(gpa, self, endY, endMoved);
     }
 
     pub fn deinit(self: *Flickable) void {
+        self.end_tracker.deinit();
         self.viewport.deinit();
         self.interactive.deinit();
+        self.snap_x.deinit();
         self.snap_y.deinit();
+        self.snap_to_items.deinit();
         self.item.deinit();
+    }
+
+    /// Scrolls to the top.
+    pub fn scrollToTop(self: *Flickable) void {
+        self.following_end = null;
+        self.heading_y = 0;
+        self.viewport.item.y.setAnimated(self.gpa, 0, snap_animation) catch self.viewport.item.y.set(0);
+    }
+
+    /// Scrolls to the bottom, and keeps there as the content's height
+    /// changes (a list measuring the rows it had estimated, rows added)
+    /// until scrolled elsewhere.
+    pub fn scrollToBottom(self: *Flickable) void {
+        const end = self.endY();
+        self.following_end = end;
+        self.heading_y = end;
+        self.viewport.item.y.setAnimated(self.gpa, end, snap_animation) catch self.viewport.item.y.set(end);
+    }
+
+    /// The viewport's position at the content's bottom.
+    fn endY(self: *Flickable) f32 {
+        return @min(0, self.item.height.get() - self.viewport.item.height.get());
+    }
+
+    fn endMoved(self: *Flickable, end: f32) void {
+        const was = self.following_end orelse return;
+        // Scrolled elsewhere since (not on its way there, nor there).
+        const y = &self.viewport.item.y;
+        if (!y.hasBinding() and y.getUntracked() != was) {
+            self.following_end = null;
+            return;
+        }
+        self.following_end = end;
+        self.heading_y = end;
+        y.setAnimated(self.gpa, end, snap_animation) catch y.set(end);
     }
 
     /// The item that holds the scrolled content.
@@ -1651,6 +1701,8 @@ pub const Flickable = struct {
 
     fn beginPress(self: *Flickable, pos: Point) void {
         self.setViewportPosition(self.viewportPosition());
+        self.following_end = null;
+        self.heading_x = null;
         self.heading_y = null;
         self.drag = .{
             .state = .pressed,
@@ -1695,18 +1747,57 @@ pub const Flickable = struct {
         const anim: @import("animations.zig").Animation = .{ .duration_ms = if (moving) flick_duration_ms else snap_duration_ms, .easing = .ease_out_cubic };
         self.viewport.item.x.setAnimated(self.gpa, target.x, anim) catch return;
         self.viewport.item.y.setAnimated(self.gpa, target.y, anim) catch return;
+        self.heading_x = target.x;
         self.heading_y = target.y;
         if (moving) self.flicked.call(.{});
     }
 
     pub const snap_duration_ms = 180;
+    const snap_animation: @import("animations.zig").Animation = .{ .duration_ms = snap_duration_ms, .easing = .ease_out_cubic };
 
     /// `p` clamped, and on the nearest snap position.
     fn snapped(self: *Flickable, p: Point) Point {
-        var c = self.clamp(p);
-        const snap = self.snap_y.get();
-        if (snap > 0) c.y = self.clamp(.{ .x = c.x, .y = @round(c.y / snap) * snap }).y;
-        return c;
+        const c = self.clamp(p);
+        return .{
+            .x = if (self.snaps(.horizontal)) self.snapAlong(.horizontal, c.x, 0) else c.x,
+            .y = if (self.snaps(.vertical)) self.snapAlong(.vertical, c.y, 0) else c.y,
+        };
+    }
+
+    fn snaps(self: *Flickable, o: Orientation) bool {
+        return self.snap_to_items.get() or (if (o == .horizontal) self.snap_x.get() else self.snap_y.get()) > 0;
+    }
+
+    /// Where scrolling along `o` settles from the viewport position `pos`
+    /// (0 at the start, negative further along): the nearest snap position
+    /// (`dir` 0), or the first past it further along (1) or back (-1).
+    /// The content's two ends are snap positions too.
+    fn snapAlong(self: *Flickable, o: Orientation, pos: f32, dir: i2) f32 {
+        const horizontal = o == .horizontal;
+        const view = if (horizontal) self.item.width.get() else self.item.height.get();
+        const extent = if (horizontal) self.viewport.item.width.get() else self.viewport.item.height.get();
+        const end = @max(0, extent - view);
+        // How far along, as the content's coordinates.
+        const at = std.math.clamp(-pos, 0, end);
+        var best: ?f32 = null;
+        best = layout.nearerSnap(best, 0, at, dir);
+        best = layout.nearerSnap(best, end, at, dir);
+        const step = if (horizontal) self.snap_x.get() else self.snap_y.get();
+        if (step > 0) switch (dir) {
+            0 => best = layout.nearerSnap(best, @round(at / step) * step, at, dir),
+            1 => best = layout.nearerSnap(best, (@floor((at + 0.5) / step) + 1) * step, at, dir),
+            else => best = layout.nearerSnap(best, (@ceil((at - 0.5) / step) - 1) * step, at, dir),
+        };
+        if (self.snap_to_items.get()) {
+            var children = self.viewport.item.layoutChildren();
+            while (children.next()) |c| {
+                const f = c.vtable.snapPosition orelse continue;
+                if (!c.visible.get()) continue;
+                const offset = if (horizontal) c.x.get() else c.y.get();
+                if (f(c, o, at - offset, dir)) |p| best = layout.nearerSnap(best, p + offset, at, dir);
+            }
+        }
+        return -std.math.clamp(best orelse at, 0, end);
     }
 
     const vtable: ItemVTable = .{
@@ -1774,17 +1865,20 @@ pub const Flickable = struct {
                 return .accepted;
             },
             .wheel => |w| {
-                const snap = self.snap_y.get();
-                if (snap > 0 and w.delta.y != 0) {
-                    // A row a step, from the row it is on (or heading to).
-                    const from = self.heading_y orelse self.viewportPosition().y;
-                    const to = self.snapped(.{ .x = self.viewportPosition().x, .y = @round(from / snap) * snap + std.math.sign(w.delta.y) * snap });
-                    const anim: @import("animations.zig").Animation = .{ .duration_ms = snap_duration_ms, .easing = .ease_out_cubic };
-                    self.viewport.item.y.setAnimated(self.gpa, to.y, anim) catch {};
-                    self.heading_y = to.y;
-                    return .accepted;
+                self.following_end = null;
+                const free = self.clamp(self.viewportPosition().add(w.delta));
+                inline for (.{ .{ "x", "heading_x", Orientation.horizontal }, .{ "y", "heading_y", Orientation.vertical } }) |axis| {
+                    const d = @field(w.delta, axis[0]);
+                    const prop = &@field(self.viewport.item, axis[0]);
+                    if (d != 0) if (self.snaps(axis[2])) {
+                        // A snap position a step, from the one it is on
+                        // (or heading to).
+                        const from = @field(self, axis[1]) orelse prop.getUntracked();
+                        const to = self.snapAlong(axis[2], from, if (d > 0) -1 else 1);
+                        prop.setAnimated(self.gpa, to, snap_animation) catch prop.set(to);
+                        @field(self, axis[1]) = to;
+                    } else prop.set(@field(free, axis[0]));
                 }
-                self.setViewportPosition(self.viewportPosition().add(w.delta));
                 return .accepted;
             },
             .exit => return .accepted,

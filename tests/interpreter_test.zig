@@ -223,5 +223,5 @@ test "interpreted programs match the compiled ones" {
     try compare(@import("ui_textfit"), "tests/ui/textfit.zge", &font);
     try compare(@import("ui_scrollview"), "tests/ui/scrollview.zge", &font);
     // Every window component of those files was compared.
-    try testing.expectEqual(@as(usize, 43), compared);
+    try testing.expectEqual(@as(usize, 44), compared);
 }

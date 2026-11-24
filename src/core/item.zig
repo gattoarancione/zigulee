@@ -147,6 +147,11 @@ pub const ItemVTable = struct {
     /// `first..first + count` (a `ListLayout` asks; see `Repeater.showRows`).
     modelRowCount: ?*const fn (*Item) usize = null,
     showRows: ?*const fn (*Item, first: usize, count: usize) void = null,
+    /// Where scrolling over it settles (a list's rows, a table's columns),
+    /// for a `Flickable` with `snap_to_items`: along `o`, the snap position
+    /// nearest `at` (`dir` 0), or the first past it (1: further along, -1:
+    /// back), in its own coordinates; null: none.
+    snapPosition: ?*const fn (*Item, o: Orientation, at: f32, dir: i2) ?f32 = null,
     /// Label for assistive technology when none is set explicitly.
     accessibleLabel: ?*const fn (*Item) []const u8 = null,
     /// The value read out for the item (a text field's text).

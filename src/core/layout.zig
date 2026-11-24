@@ -386,3 +386,27 @@ test "grid: columns, spans and minimums" {
     solveGrid(.{ .size = 200, .spacing = 10 }, &cells, &tracks, &track_out, &out);
     try expectSegments(&.{ .{ 0, 120 }, .{ 130, 70 }, .{ 0, 200 } }, &out);
 }
+
+/// Of snap positions `best` and `p`: the nearer to `at` (`dir` 0), or the
+/// first past it in `dir` (1: further along, -1: back; null: none yet).
+pub fn nearerSnap(best: ?f32, p: f32, at: f32, dir: i2) ?f32 {
+    switch (dir) {
+        0 => if (best) |b| if (@abs(b - at) <= @abs(p - at)) return b,
+        1 => if (p <= at + 0.5) return best else if (best) |b| if (b <= p) return b,
+        else => if (p >= at - 0.5) return best else if (best) |b| if (b >= p) return b,
+    }
+    return p;
+}
+
+test "the snap position nearest, or the next one either way" {
+    var best: ?f32 = null;
+    for ([_]f32{ 0, 30, 60, 90 }) |p| best = nearerSnap(best, p, 40, 0);
+    try std.testing.expectEqual(@as(?f32, 30), best);
+    best = null;
+    for ([_]f32{ 90, 0, 60, 30 }) |p| best = nearerSnap(best, p, 30, 1);
+    try std.testing.expectEqual(@as(?f32, 60), best);
+    best = null;
+    for ([_]f32{ 0, 60, 30, 90 }) |p| best = nearerSnap(best, p, 30, -1);
+    try std.testing.expectEqual(@as(?f32, 0), best);
+    try std.testing.expectEqual(@as(?f32, null), nearerSnap(null, 30, 30, 1));
+}

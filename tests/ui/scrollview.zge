@@ -3,7 +3,7 @@
 
 // Scroll views whose content grows, comes and shows, down and sideways:
 // their scroll bars follow.
-import { ScrollView } from "std-widgets.zge";
+import { ScrollView, ListView, TableView } from "std-widgets.zge";
 
 export component Scrolls inherits Window {
     width: 300px;
@@ -39,6 +39,35 @@ export component Scrolls inherits Window {
         VerticalLayout {
             visible: root.shown;
             Rectangle { height: 300px; width: 250px; }
+        }
+    }
+}
+
+// A list settling on its rows, and a table on its columns; to the top and
+// the bottom, kept there as rows come.
+export component Snaps inherits Window {
+    width: 200px;
+    height: 100px;
+    var in-out <int> rows: 10;
+
+    list := ListView {
+        x: 0px;
+        width: 100px;
+        height: 100px;
+        snap-to-items: true;
+        for i in root.rows : Rectangle { height: 30px; }
+    }
+    table := TableView {
+        x: 100px;
+        width: 100px;
+        height: 100px;
+        snap-to-items: true;
+        columns: ["a", "b", "c"];
+        column-widths: [80px, 80px, 80px];
+        for i in 3 : TableRow {
+            Text { text: "a"; }
+            Text { text: "b"; }
+            Text { text: "c"; }
         }
     }
 }

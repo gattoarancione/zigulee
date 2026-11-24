@@ -16,6 +16,9 @@ import { ScrollView } from "scrollview.zge";
 // table: the headers (sorting when pressed), then the rows (selected when
 // pressed), each with its cells.
 export component StandardTableView inherits Rectangle {
+    // Scrolling settles on the rows' tops, and across on the columns'
+    // edges when `column-widths` gives them.
+    var in <bool> snap-to-items;
     var in <[string]> columns;
     var in <[[string]]> rows;
     var in <[length]> column-widths;
@@ -85,6 +88,15 @@ export component StandardTableView inherits Rectangle {
         count: root.rows.length;
         changed => { root.selection-changed(); }
     }
+    // Scrolls to the first row, or the last (and keeps there as rows are
+    // added, until scrolled elsewhere).
+    public function scroll-to-top() {
+        body.scroll-to-top();
+    }
+    public function scroll-to-bottom() {
+        body.scroll-to-bottom();
+    }
+
     public function column-width(c: int) -> length {
         return root.column-widths.length == root.columns.length ? root.column-widths[c] : (root.width - 2px) / max(1, root.columns.length);
     }
@@ -164,6 +176,7 @@ export component StandardTableView inherits Rectangle {
         height: parent.height - 34px;
         border-width: 0px;
         background: #00000000;
+        snap-to-items: root.snap-to-items;
         ListLayout {
             viewport-y: body.viewport-y;
             visible-height: body.visible-height;
@@ -234,6 +247,9 @@ export component StandardTableView inherits Rectangle {
 // instances, handed on as it scrolls (as in a ListView). Clicking a header asks the app to
 // sort by it.
 export component TableView inherits Rectangle {
+    // Scrolling settles on the rows' tops, and across on the columns'
+    // edges when `column-widths` gives them.
+    var in <bool> snap-to-items;
     var in <[string]> columns;
     var in <[length]> column-widths;
     var in <length> row-height: 32px;
@@ -244,6 +260,15 @@ export component TableView inherits Rectangle {
     var out <bool> sort-ascending: true;
     // Called when a header is clicked: sort the rows by that column.
     callback sort-requested(int, bool);
+
+    // Scrolls to the first row, or the last (and keeps there as rows are
+    // added, until scrolled elsewhere).
+    public function scroll-to-top() {
+        body.scroll-to-top();
+    }
+    public function scroll-to-bottom() {
+        body.scroll-to-bottom();
+    }
 
     public function column-width(c: int) -> length {
         return root.column-widths.length == root.columns.length ? root.column-widths[c] : (root.width - 2px) / max(1, root.columns.length);
@@ -317,6 +342,7 @@ export component TableView inherits Rectangle {
         height: parent.height - 34px;
         border-width: 0px;
         background: #00000000;
+        snap-to-items: root.snap-to-items;
         list := ListLayout {
             viewport-y: body.viewport-y;
             visible-height: body.visible-height;

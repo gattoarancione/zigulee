@@ -455,7 +455,7 @@ Functions: `focus()`, `select-all()`, `clear-selection()`, `copy()`, `cut()`, `p
 
 ## Flickable
 
-Scrolls its children (the viewport) by dragging or the mouse wheel. Taps still reach the children. With `snap-y`, scrolling settles on multiples of it, and the wheel moves by one.
+Scrolls its children (the viewport) by dragging or the mouse wheel. Taps still reach the children. With `snap-x` or `snap-y`, scrolling settles on multiples of it; with `snap-to-items`, where the content says (a ListLayout's rows, under its pinned section header, and its columns when they have widths); either way on the content's ends too, and the wheel moves by one snap position. `scroll-to-top()` and `scroll-to-bottom()` scroll there; after `scroll-to-bottom()` it keeps at the bottom as the content's height changes (rows measured, rows added) until scrolled elsewhere.
 
 | Property | Type | Access |
 |---|---|---|
@@ -464,11 +464,15 @@ Scrolls its children (the viewport) by dragging or the mouse wheel. Taps still r
 | `viewport-width` | length | in-out |
 | `viewport-height` | length | in-out |
 | `interactive` | bool | in-out |
+| `snap-x` | length | in-out |
 | `snap-y` | length | in-out |
+| `snap-to-items` | bool | in-out |
 
 Callbacks:
 
 - `flicked()`
+
+Functions: `scroll-to-top()`, `scroll-to-bottom()`
 
 ## Timer
 

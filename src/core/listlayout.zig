@@ -486,7 +486,39 @@ pub const ListLayout = struct {
         if (self.wantedWindow() != self.window.getUntracked()) self.syncWindow();
     }
 
-    const vtable: ItemVTable = .{ .name = "ListLayout", .layoutInfo = layoutInfo, .childrenChanged = childrenChanged, .is_layout = true, .shows_rows = true };
+    /// Where scrolling settles (`ItemVTable.snapPosition`): down, at the
+    /// rows' tops (with sections, just under the pinned header, so a
+    /// section's first row shows its own); across, at the columns' left
+    /// edges, when they have widths.
+    fn snapPosition(i: *Item, o: Orientation, at: f32, dir: i2) ?f32 {
+        const self: *ListLayout = @alignCast(@fieldParentPtr("item", i));
+        if (o == .horizontal) {
+            const n: usize = @intCast(@max(0, self.column_count.get()));
+            const widths = self.column_widths.get();
+            if (n == 0 or widths.rowCount() != n) return null;
+            var best: ?f32 = null;
+            var x: f32 = 0;
+            for (0..n) |c| {
+                best = layout.nearerSnap(best, x, at, dir);
+                x += widths.rowData(c) orelse 0;
+            }
+            return best;
+        }
+        _ = self.version.get();
+        const n = self.rowCount();
+        if (n == 0) return null;
+        const rh = self.rowHeight();
+        _ = self.sections_read.get();
+        const lift: f32 = if (self.starts.items.len > 0) self.section_height.get() else 0;
+        // Row `r`'s top is at or above `at`, row `r + 1`'s below it.
+        const r = self.rowAt(at + lift, n, rh);
+        var best: ?f32 = null;
+        var row = if (r > 0) r - 1 else 0;
+        while (row <= @min(n - 1, r + 2)) : (row += 1) best = layout.nearerSnap(best, @max(0, self.rowY(row, rh) - lift), at, dir);
+        return best;
+    }
+
+    const vtable: ItemVTable = .{ .name = "ListLayout", .layoutInfo = layoutInfo, .childrenChanged = childrenChanged, .snapPosition = snapPosition, .is_layout = true, .shows_rows = true };
 };
 
 /// A row of a table: its children are its cells, in the columns of the

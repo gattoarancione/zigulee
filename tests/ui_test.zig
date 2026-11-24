@@ -3751,3 +3751,76 @@ test "a scroll view's scroll bars follow its content: grown, added, shown" {
     zigulee.runChangeHandlers();
     try testing.expectEqual(Size{ 250, 300 }, viewport(&app.shows));
 }
+
+test "a list settles on its rows and a table on its columns; to the top and the bottom, kept there" {
+    const sui = @import("ui_scrollview");
+    const app = try sui.Snaps.create(gpa);
+    defer app.destroy();
+    const w = app.window();
+    zigulee.runChangeHandlers();
+    var t = zigulee.core.now();
+    const settle = struct {
+        fn run(clock: *u64) void {
+            for (0..40) |_| {
+                clock.* += 10;
+                zigulee.updateTimersAndAnimations(clock.*);
+                zigulee.runChangeHandlers();
+            }
+        }
+    };
+    const list = &app.list.root;
+    // Ten 30 px rows in 98 px: the bottom at 300 - 98 = 202 down.
+    try testing.expectEqual(@as(f32, 300), list.viewport_height.get());
+
+    // The wheel: a row a step, the last step to the bottom (not a row's top).
+    const mid: zigulee.core.Point = .{ .x = 50, .y = 50 };
+    w.dispatchPointer(.{ .wheel = .{ .position = mid, .delta = .{ .y = -3 } } });
+    settle.run(&t);
+    try testing.expectEqual(@as(f32, -30), list.viewport_y.get());
+    for (0..5) |_| w.dispatchPointer(.{ .wheel = .{ .position = mid, .delta = .{ .y = -3 } } });
+    settle.run(&t);
+    try testing.expectEqual(@as(f32, -180), list.viewport_y.get());
+    w.dispatchPointer(.{ .wheel = .{ .position = mid, .delta = .{ .y = -3 } } });
+    settle.run(&t);
+    try testing.expectEqual(@as(f32, -202), list.viewport_y.get());
+    w.dispatchPointer(.{ .wheel = .{ .position = mid, .delta = .{ .y = 3 } } });
+    settle.run(&t);
+    try testing.expectEqual(@as(f32, -180), list.viewport_y.get());
+
+    // Dragged 40 px up, held still, released: on the nearest row (30 px).
+    list.viewport_y.set(0);
+    w.dispatchPointer(.{ .pressed = .{ .position = mid } });
+    w.dispatchPointer(.{ .moved = .{ .position = .{ .x = 50, .y = 30 } } });
+    w.dispatchPointer(.{ .moved = .{ .position = .{ .x = 50, .y = 10 } } });
+    t += 200;
+    zigulee.updateTimersAndAnimations(t);
+    w.dispatchPointer(.{ .released = .{ .position = .{ .x = 50, .y = 10 } } });
+    settle.run(&t);
+    try testing.expectEqual(@as(f32, -30), list.viewport_y.get());
+
+    // To the bottom, and kept there as rows come; to the top.
+    app.list.root.invoke_scroll_to_bottom();
+    settle.run(&t);
+    try testing.expectEqual(@as(f32, -202), list.viewport_y.get());
+    app.rows.set(12);
+    settle.run(&t);
+    try testing.expectEqual(@as(f32, -262), list.viewport_y.get());
+    app.list.root.invoke_scroll_to_top();
+    settle.run(&t);
+    try testing.expectEqual(@as(f32, 0), list.viewport_y.get());
+    // Not following any more: rows coming leave it at the top.
+    app.rows.set(14);
+    settle.run(&t);
+    try testing.expectEqual(@as(f32, 0), list.viewport_y.get());
+
+    // The table, sideways: three 80 px columns in 100 px; a step lands on
+    // the second column's edge, the next on the right end.
+    const right: zigulee.core.Point = .{ .x = 150, .y = 70 };
+    w.dispatchPointer(.{ .wheel = .{ .position = right, .delta = .{ .x = -3 } } });
+    settle.run(&t);
+    const body = &app.table.body;
+    try testing.expectEqual(@as(f32, -80), body.viewport_x.get());
+    w.dispatchPointer(.{ .wheel = .{ .position = right, .delta = .{ .x = -3 } } });
+    settle.run(&t);
+    try testing.expectEqual(@as(f32, body.visible_width.get() - 240), body.viewport_x.get());
+}
