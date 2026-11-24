@@ -1543,7 +1543,7 @@ fn releaseChildGeometry(parent: *Item) void {
 /// items of a tumbler), and the wheel moves by one.
 pub const Flickable = struct {
     item: Item = .init(&vtable),
-    viewport: Empty = .{},
+    viewport: Viewport = .{},
     interactive: Property(bool) = .init(true),
     /// Vertical positions settle on multiples of this (0: anywhere).
     snap_y: Property(f32) = .init(0),
@@ -1586,6 +1586,38 @@ pub const Flickable = struct {
     /// The item that holds the scrolled content.
     pub fn content(self: *Flickable) *Item {
         return &self.viewport.item;
+    }
+
+    /// The content's item: counts the changes to its children (the
+    /// instances of its `for`s and `if`s too), for what measures them.
+    pub const Viewport = struct {
+        item: Item = .init(&viewport_vtable),
+        children_changes: Property(u32) = .init(0),
+
+        pub fn deinit(self: *Viewport) void {
+            self.children_changes.deinit();
+            self.item.deinit();
+        }
+
+        const viewport_vtable: ItemVTable = .{ .name = "Empty", .childrenChanged = childrenChanged };
+
+        fn childrenChanged(i: *Item) void {
+            const self: *Viewport = @fieldParentPtr("item", i);
+            self.children_changes.set(self.children_changes.getUntracked() +% 1);
+        }
+    };
+
+    /// The viewport's height when not given: the visible layouts' in it
+    /// (those of its `for`s and `if`s too), at least the view's. Follows
+    /// them as they change, come, go, show and hide.
+    pub fn fittedViewportHeight(self: *Flickable) f32 {
+        _ = self.viewport.children_changes.get();
+        var info: LayoutInfo = .{};
+        var children = self.viewport.item.layoutChildren();
+        while (children.next()) |c| {
+            if (c.vtable.is_layout and c.visible.get()) info = info.merge(c.layoutInfo(.vertical));
+        }
+        return @max(self.item.height.get(), info.normalized().preferred);
     }
 
     pub fn viewportPosition(self: *Flickable) Point {

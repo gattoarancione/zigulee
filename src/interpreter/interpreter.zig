@@ -726,7 +726,7 @@ pub const Instance = struct {
     }
 
     fn flickableHeight(f: *items.Flickable) f32 {
-        return @max(f.item.height.get(), f.viewport.item.layoutInfo(.vertical).preferred);
+        return f.fittedViewportHeight();
     }
 
     fn parentWidth(item: *core.Item) f32 {

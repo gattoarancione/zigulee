@@ -3711,3 +3711,30 @@ test "Canvas (compiled): paths, clips, transforms and fading; painted again on c
     try testing.expectEqual(@as(u8, 0xdc), at(&pixels, 95, 10).r);
     try testing.expectEqual(@as(u8, 0x26), at(&pixels, 95, 10).g);
 }
+
+test "a scroll view's scroll bars follow its content: grown, added, shown" {
+    const sui = @import("ui_scrollview");
+    const app = try sui.Scrolls.create(gpa);
+    defer app.destroy();
+    zigulee.runChangeHandlers();
+    // 98 px seen (inside the border): two 30 px rows fit.
+    const seen = app.grows.visible_height.get();
+    try testing.expectEqual(@as(f32, 98), seen);
+    try testing.expectEqual(seen, app.grows.viewport_height.get());
+    app.rows.set(5);
+    zigulee.runChangeHandlers();
+    try testing.expectEqual(@as(f32, 150), app.grows.viewport_height.get());
+
+    try testing.expectEqual(seen, app.comes.viewport_height.get());
+    app.added.set(true);
+    zigulee.runChangeHandlers();
+    try testing.expectEqual(@as(f32, 300), app.comes.viewport_height.get());
+    app.added.set(false);
+    zigulee.runChangeHandlers();
+    try testing.expectEqual(seen, app.comes.viewport_height.get());
+
+    try testing.expectEqual(seen, app.shows.viewport_height.get());
+    app.shown.set(true);
+    zigulee.runChangeHandlers();
+    try testing.expectEqual(@as(f32, 300), app.shows.viewport_height.get());
+}

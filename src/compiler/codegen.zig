@@ -2839,7 +2839,7 @@ pub const Generator = struct {
             }
             if (!hasBinding(el, "viewport-height")) {
                 const name = try g.newFn(&fields, "b");
-                try g.appendFmt(&fields.functions, "    fn {s}(self: *Self) f32 {{\n        return @max(self.{s}.item.height.get(), self.{s}.viewport.item.layoutInfo(.vertical).preferred);\n    }}\n\n", .{ name, el.field, el.field });
+                try g.appendFmt(&fields.functions, "    fn {s}(self: *Self) f32 {{\n        return self.{s}.fittedViewportHeight();\n    }}\n\n", .{ name, el.field });
                 try line(iw, 2, "try self.{s}.viewport.item.height.setBinding(gpa, self, {s});", .{ el.field, name });
             }
         }
