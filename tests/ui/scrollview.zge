@@ -1,14 +1,15 @@
 // Copyright (c) 2026 Claudio Russo
 // SPDX-License-Identifier: MIT
 
-// Scroll views whose content grows, comes and shows: their scroll bars
-// follow.
+// Scroll views whose content grows, comes and shows, down and sideways:
+// their scroll bars follow.
 import { ScrollView } from "std-widgets.zge";
 
 export component Scrolls inherits Window {
     width: 300px;
     height: 100px;
     var in-out <int> rows: 2;
+    var in-out <length> row-width: 50px;
     var in-out <bool> added;
     var in-out <bool> shown;
 
@@ -18,7 +19,7 @@ export component Scrolls inherits Window {
         width: 100px;
         height: 100px;
         VerticalLayout {
-            for i in root.rows : Rectangle { height: 30px; }
+            for i in root.rows : Rectangle { height: 30px; width: root.row-width; }
         }
     }
     // Content that comes: a layout added by a condition.
@@ -27,7 +28,7 @@ export component Scrolls inherits Window {
         width: 100px;
         height: 100px;
         if root.added : VerticalLayout {
-            Rectangle { height: 300px; }
+            Rectangle { height: 300px; width: 250px; }
         }
     }
     // Content that shows: a hidden layout made visible.
@@ -37,7 +38,7 @@ export component Scrolls inherits Window {
         height: 100px;
         VerticalLayout {
             visible: root.shown;
-            Rectangle { height: 300px; }
+            Rectangle { height: 300px; width: 250px; }
         }
     }
 }

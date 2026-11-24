@@ -2834,7 +2834,7 @@ pub const Generator = struct {
             if (el.kind != .builtin or !std.mem.eql(u8, el.kind.builtin.name, "Flickable")) continue;
             if (!hasBinding(el, "viewport-width")) {
                 const name = try g.newFn(&fields, "b");
-                try g.appendFmt(&fields.functions, "    fn {s}(self: *Self) f32 {{\n        return self.{s}.item.width.get();\n    }}\n\n", .{ name, el.field });
+                try g.appendFmt(&fields.functions, "    fn {s}(self: *Self) f32 {{\n        return self.{s}.fittedViewportWidth();\n    }}\n\n", .{ name, el.field });
                 try line(iw, 2, "try self.{s}.viewport.item.width.setBinding(gpa, self, {s});", .{ el.field, name });
             }
             if (!hasBinding(el, "viewport-height")) {

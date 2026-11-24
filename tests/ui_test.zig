@@ -3717,24 +3717,37 @@ test "a scroll view's scroll bars follow its content: grown, added, shown" {
     const app = try sui.Scrolls.create(gpa);
     defer app.destroy();
     zigulee.runChangeHandlers();
-    // 98 px seen (inside the border): two 30 px rows fit.
+    // 98 x 98 px seen (inside the border): two 50 x 30 px rows fit.
     const seen = app.grows.visible_height.get();
     try testing.expectEqual(@as(f32, 98), seen);
-    try testing.expectEqual(seen, app.grows.viewport_height.get());
+    try testing.expectEqual(@as(f32, 98), app.grows.visible_width.get());
+    const Size = struct { f32, f32 };
+    const viewport = struct {
+        fn f(sv: anytype) Size {
+            return .{ sv.viewport_width.get(), sv.viewport_height.get() };
+        }
+    }.f;
+    try testing.expectEqual(Size{ seen, seen }, viewport(&app.grows));
+    // Grown: taller, then wider.
     app.rows.set(5);
     zigulee.runChangeHandlers();
-    try testing.expectEqual(@as(f32, 150), app.grows.viewport_height.get());
+    try testing.expectEqual(Size{ seen, 150 }, viewport(&app.grows));
+    app.row_width.set(200);
+    zigulee.runChangeHandlers();
+    try testing.expectEqual(Size{ 200, 150 }, viewport(&app.grows));
 
-    try testing.expectEqual(seen, app.comes.viewport_height.get());
+    // Added, then gone.
+    try testing.expectEqual(Size{ seen, seen }, viewport(&app.comes));
     app.added.set(true);
     zigulee.runChangeHandlers();
-    try testing.expectEqual(@as(f32, 300), app.comes.viewport_height.get());
+    try testing.expectEqual(Size{ 250, 300 }, viewport(&app.comes));
     app.added.set(false);
     zigulee.runChangeHandlers();
-    try testing.expectEqual(seen, app.comes.viewport_height.get());
+    try testing.expectEqual(Size{ seen, seen }, viewport(&app.comes));
 
-    try testing.expectEqual(seen, app.shows.viewport_height.get());
+    // Shown.
+    try testing.expectEqual(Size{ seen, seen }, viewport(&app.shows));
     app.shown.set(true);
     zigulee.runChangeHandlers();
-    try testing.expectEqual(@as(f32, 300), app.shows.viewport_height.get());
+    try testing.expectEqual(Size{ 250, 300 }, viewport(&app.shows));
 }

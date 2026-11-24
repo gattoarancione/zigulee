@@ -722,7 +722,7 @@ pub const Instance = struct {
     }
 
     fn flickableWidth(f: *items.Flickable) f32 {
-        return f.item.width.get();
+        return f.fittedViewportWidth();
     }
 
     fn flickableHeight(f: *items.Flickable) f32 {

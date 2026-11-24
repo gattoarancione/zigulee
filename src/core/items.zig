@@ -1611,13 +1611,25 @@ pub const Flickable = struct {
     /// (those of its `for`s and `if`s too), at least the view's. Follows
     /// them as they change, come, go, show and hide.
     pub fn fittedViewportHeight(self: *Flickable) f32 {
+        return @max(self.item.height.get(), self.contentInfo(.vertical).preferred);
+    }
+
+    /// The viewport's width when not given: as `fittedViewportHeight`, but
+    /// the layouts' minimum, so the content fills the view's width when it
+    /// can and scrolls sideways only when it cannot.
+    pub fn fittedViewportWidth(self: *Flickable) f32 {
+        return @max(self.item.width.get(), self.contentInfo(.horizontal).min);
+    }
+
+    /// The visible layouts in the viewport, merged.
+    fn contentInfo(self: *Flickable, o: Orientation) LayoutInfo {
         _ = self.viewport.children_changes.get();
         var info: LayoutInfo = .{};
         var children = self.viewport.item.layoutChildren();
         while (children.next()) |c| {
-            if (c.vtable.is_layout and c.visible.get()) info = info.merge(c.layoutInfo(.vertical));
+            if (c.vtable.is_layout and c.visible.get()) info = info.merge(c.layoutInfo(o));
         }
-        return @max(self.item.height.get(), info.normalized().preferred);
+        return info.normalized();
     }
 
     pub fn viewportPosition(self: *Flickable) Point {
