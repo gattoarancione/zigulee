@@ -450,6 +450,8 @@ pub const Instance = struct {
     stores: std.AutoHashMapUnmanaged(*const anyopaque, *Store) = .empty,
     /// Properties driven by `states`, by property pointer.
     state_props: std.AutoArrayHashMapUnmanaged(*anyopaque, *StateProp) = .empty,
+    /// Its `StateMachine`s' definitions and hooks (in the arena).
+    machines: std.ArrayList(*MachineCtx) = .empty,
     /// Whether `init` finished (for teardown after a failure).
     ready: bool = false,
 
@@ -600,6 +602,7 @@ pub const Instance = struct {
         self.array_models.deinit(self.gpa);
         self.stores.deinit(self.gpa);
         self.state_props.deinit(self.gpa);
+        self.machines.deinit(self.gpa);
         self.arena.deinit();
     }
 
@@ -694,6 +697,12 @@ pub const Instance = struct {
             if (!sets.height) try item.height.setBinding(self.gpa, item, parentHeight);
         }
 
+        // State machines, started once all is set up (below).
+        for (c.elements.items) |el| if (el.machine) |m| {
+            const ctx = try MachineCtx.make(self, el, m);
+            try self.machines.append(self.gpa, ctx);
+        };
+
         // Layouts, children first.
         var i = c.elements.items.len;
         while (i > 0) {
@@ -719,6 +728,7 @@ pub const Instance = struct {
                 } else try @as(*items.BoxLayout, @ptrCast(@alignCast(ptr))).setup(self.gpa);
             }
         }
+        for (self.machines.items) |mc| mc.machine.begin();
     }
 
     fn flickableWidth(f: *items.Flickable) f32 {
@@ -1317,6 +1327,12 @@ pub const Instance = struct {
                     if (reflect.accessibleProp(acc, name)) |r| return .{ .property = .{ .refs = single(r), .ty = r.ty, .anim = anim } };
                     if (reflect.accessibleCallback(acc, name)) |cb| return .{ .callback = .{ .builtin = cb } };
                 }
+                if (el.machine) |m| {
+                    const sm: *core.statemachine.StateMachine = @ptrCast(@alignCast(b.ptr));
+                    if (m.eventIndex(name)) |id| return .{ .machine_event = .{ .machine = sm, .params = m.events.items[id].params, .id = id } };
+                    if (std.mem.eql(u8, name, "state")) return .{ .value = .{ .enumeration = .{ .def = m.state_enum, .index = @intCast(sm.last.get()) } } };
+                    if (m.region(name)) |r| return .{ .value = .{ .enumeration = .{ .def = r.state_enum, .index = r.table[@intCast(sm.lastIn(r.state))] } } };
+                }
                 if (b.meta.callback(b.ptr, name)) |cb| return .{ .callback = .{ .builtin = cb } };
                 if (b.meta.decl.function(name) != null) return .{ .function = .{ .obj = b, .name = name } };
                 return null;
@@ -1824,6 +1840,138 @@ const HandlerCtx = struct {
     }
 };
 
+/// A `StateMachine` of an instance: its definition, built from the
+/// compiler's analysis, and hooks evaluating its source.
+const MachineCtx = struct {
+    inst: *Instance,
+    elem: *Elem,
+    m: *const codegen.Machine,
+    def: core.statemachine.Definition,
+    machine: *core.statemachine.StateMachine,
+
+    fn make(inst: *Instance, el: *Elem, m: *const codegen.Machine) Error!*MachineCtx {
+        const a = inst.arena.allocator();
+        const states = try a.alloc(core.statemachine.State, m.states.items.len);
+        for (states, m.states.items, 0..) |*st, src, si| {
+            var transitions: std.ArrayList(core.statemachine.Transition) = .empty;
+            for (m.transitions.items, 0..) |t, ti| if (t.state == si) try transitions.append(a, .{
+                .trigger = if (t.event) |e| .{ .event = e } else if (t.after) |af| .{ .after = af } else if (t.done) |d| .{ .done = d } else .eventless,
+                .target = t.target,
+                .to_history = t.to_history,
+                .index = @intCast(ti),
+                .guarded = t.ast.guard != null,
+            });
+            st.* = .{
+                .name = src.ast.name.name,
+                .path = try std.mem.replaceOwned(u8, a, src.path, ".", "/"),
+                .parent = src.parent,
+                .initial = src.initial,
+                .history = if (src.ast.history) |h| (if (h.deep) .deep else .shallow) else .none,
+                .parallel = src.ast.kind == .parallel,
+                .final = src.ast.kind == .final,
+                .transitions = transitions.items,
+            };
+        }
+        const events = try a.alloc([]const u8, m.events.items.len);
+        for (events, m.events.items) |*e, src| e.* = src.name;
+        const ctx = try a.create(MachineCtx);
+        ctx.* = .{
+            .inst = inst,
+            .elem = el,
+            .m = m,
+            .def = .{ .states = states, .events = events, .initial = m.initial, .afters = m.afters },
+            .machine = @ptrCast(@alignCast(inst.objs[el.index].builtin.ptr)),
+        };
+        try ctx.machine.setup(&ctx.def, .{ .ctx = ctx, .guard = guard, .action = action, .entered = entered, .exited = exited, .delay = delay });
+        return ctx;
+    }
+
+    fn toArg(v: Value) core.statemachine.Arg {
+        return switch (v) {
+            .bool => |b| .{ .boolean = b },
+            .int => |i| .{ .int = i },
+            .enumeration => |e| .{ .int = @intCast(e.index) },
+            .float, .length => |f| .{ .float = f },
+            .string => |str| .{ .string = str },
+            else => .{ .int = 0 },
+        };
+    }
+
+    fn toValue(arg: core.statemachine.Arg, t: Type) Value {
+        return switch (t) {
+            .bool => .{ .bool = arg.boolean },
+            .int => .{ .int = arg.int },
+            .enumeration => |en| .{ .enumeration = .{ .def = en, .index = @intCast(arg.int) } },
+            .float => .{ .float = arg.float },
+            .length => .{ .length = arg.float },
+            .string => .{ .string = arg.string },
+            else => .void,
+        };
+    }
+
+    fn of(ctx: *anyopaque) *MachineCtx {
+        return @ptrCast(@alignCast(ctx));
+    }
+
+    /// Runs `f` with an `Env` for code written in the machine, the event's
+    /// arguments named as transition `t` names them.
+    fn withEnv(self: *MachineCtx, t: ?u16, args: []const core.statemachine.Arg, comptime R: type, f: anytype, extra: anytype) R {
+        var scratch: std.heap.ArenaAllocator = .init(self.inst.gpa);
+        defer scratch.deinit();
+        const a = scratch.allocator();
+        var locals: std.ArrayList(Local) = .empty;
+        if (t) |ti| {
+            const tr = self.m.transitions.items[ti];
+            if (tr.event) |e| for (tr.ast.trigger.event.params, 0..) |param, k| {
+                if (k >= args.len) break;
+                locals.append(a, .{ .name = param.name, .value = toValue(args[k], self.m.events.items[e].params[k]) }) catch break;
+            };
+        }
+        var env: Env = .{ .inst = self.inst, .elem = self.elem, .locals = locals.items, .scratch = a };
+        return f(&env, extra);
+    }
+
+    fn guard(ctx: *anyopaque, t: u16, args: []const core.statemachine.Arg) bool {
+        const self = of(ctx);
+        return self.withEnv(t, args, bool, struct {
+            fn f(env: *Env, e: *const ast.Expr) bool {
+                const v = env.eval(e, .bool) catch return false;
+                return v == .bool and v.bool;
+            }
+        }.f, self.m.transitions.items[t].ast.guard.?);
+    }
+
+    fn run(env: *Env, stmts: []const ast.Stmt) void {
+        _ = env.exec(stmts) catch |err| log.err("state machine code failed: {t}", .{err});
+    }
+
+    fn action(ctx: *anyopaque, t: u16, args: []const core.statemachine.Arg) void {
+        const self = of(ctx);
+        self.withEnv(t, args, void, run, self.m.transitions.items[t].ast.actions);
+    }
+
+    fn entered(ctx: *anyopaque, s: u16) void {
+        const self = of(ctx);
+        if (self.m.states.items[s].ast.entered) |b| self.withEnv(null, &.{}, void, run, b);
+    }
+
+    fn exited(ctx: *anyopaque, s: u16) void {
+        const self = of(ctx);
+        if (self.m.states.items[s].ast.exited) |b| self.withEnv(null, &.{}, void, run, b);
+    }
+
+    fn delay(ctx: *anyopaque, after: u16) i64 {
+        const self = of(ctx);
+        for (self.m.transitions.items) |t| if (t.after == after) return self.withEnv(null, &.{}, i64, struct {
+            fn f(env: *Env, e: *const ast.Expr) i64 {
+                const v = env.eval(e, .duration) catch return 0;
+                return if (v == .duration) v.duration else 0;
+            }
+        }.f, t.ast.trigger.after);
+        return 0;
+    }
+};
+
 /// What a PropertyAnimation animates: values captured when it begins, set
 /// between them.
 const AnimationTarget = struct {
@@ -2020,6 +2168,8 @@ const Ref = union(enum) {
     enum_type: *const types.Enum,
     global: *Instance,
     key_namespace,
+    /// An event of a `StateMachine`: sent by calling it.
+    machine_event: struct { machine: *core.statemachine.StateMachine, params: []const Type, id: u16 },
 };
 
 const Local = struct { name: []const u8, value: Value };
@@ -2314,8 +2464,30 @@ const Env = struct {
             const bounce = if (args.len > 0) (try env.eval(args[0], .float)).asFloat() else 0;
             return .{ .easing = .{ .spring = bounce } };
         }
+        // `machine.active(state)`.
+        if (callee.kind == .member and std.mem.eql(u8, callee.kind.member.name.name, "active")) {
+            const obj = try env.compileRef(callee.kind.member.object);
+            if (obj == .element) if (obj.element.elem.machine) |m| {
+                const parts = (if (args.len == 1) try codegen.Machine.exprParts(env.scratch, args[0]) else null) orelse return env.fail("no such state", .{});
+                const st = switch (m.find(parts, null)) {
+                    .found => |f| f.state,
+                    .not_found => return env.fail("no such state", .{}),
+                };
+                const sm: *core.statemachine.StateMachine = @ptrCast(@alignCast(obj.element.inst.objs[obj.element.elem.index].builtin.ptr));
+                return .{ .bool = sm.isActive(st) };
+            };
+        }
         const ref = try env.compileRef(callee);
         switch (ref) {
+            .machine_event => |ev| {
+                var packed_args: [4]core.statemachine.Arg = undefined;
+                for (ev.params, 0..) |t, i| {
+                    const v = if (i < args.len) try env.eval(args[i], t) else try value_mod.defaultValue(t, env.scratch);
+                    packed_args[i] = MachineCtx.toArg(v);
+                }
+                ev.machine.sendEvent(ev.id, packed_args[0..ev.params.len]);
+                return .void;
+            },
             .callback => |cb| {
                 const params = switch (cb) {
                     .declared => |d| d.inst.callbacks[d.index].params,
@@ -2476,6 +2648,9 @@ const Env = struct {
                 switch (obj) {
                     .global => |g| {
                         if (try g.memberOf(g.comp.root, true, name)) |r| return r;
+                        // A state machine of the global.
+                        if (g.comp.ids.get(try codegen.zigName(env.scratch, name))) |el| if (el.machine != null)
+                            return .{ .element = .{ .inst = g, .elem = el } };
                         return env.fail("no member '{s}'", .{name});
                     },
                     .key_namespace => {

@@ -156,6 +156,7 @@ pub const gif = @import("gif.zig");
 pub const animated = @import("animated.zig");
 pub const loader = @import("loader.zig");
 pub const timeline = @import("timeline.zig");
+pub const statemachine = @import("statemachine.zig");
 pub const dnd = @import("dnd.zig");
 pub const gestures = @import("gestures.zig");
 pub const shortcuts = @import("shortcuts.zig");
@@ -294,6 +295,7 @@ test {
     _ = animated;
     _ = loader;
     _ = timeline;
+    _ = statemachine;
     _ = dnd;
     _ = gestures;
     _ = shortcuts;

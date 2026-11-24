@@ -3838,3 +3838,248 @@ test "a list settles on its rows and a table on its columns; to the top and the 
     settle.run(&t);
     try testing.expectEqual(@as(f32, body.visible_width.get() - 240), body.viewport_x.get());
 }
+
+test "state machines: events, guards, entry and exit actions, after, its own events queued; one in a global" {
+    const mui = @import("ui_machine");
+    const app = try mui.Machines.create(gpa);
+    defer app.destroy();
+    var t = zigulee.core.now();
+    const advance = struct {
+        fn by(clock: *u64, ms: u64) void {
+            clock.* += ms;
+            zigulee.updateTimersAndAnimations(clock.*);
+            zigulee.runChangeHandlers();
+        }
+    }.by;
+    // Running from the start: its initial state entered.
+    try testing.expectEqualStrings("+idle ", app.log.get());
+    try testing.expectEqualStrings("idle", app.fetch.current.get());
+    try testing.expect(!app.busy.get());
+
+    // Exit actions, then the transition's, then entry actions.
+    app.send_fetch_go();
+    try testing.expectEqualStrings("+idle -idle go +loading ", app.log.get());
+    try testing.expect(app.busy.get());
+    try testing.expect(app.box.background.get().eql(.color(.rgb(0xff0000))));
+    // A guarded internal transition: no state left or entered.
+    app.send_fetch_ping(0);
+    app.send_fetch_ping(3);
+    try testing.expectEqual(@as(i32, 3), app.pings.get());
+    try testing.expectEqualStrings("loading", app.fetch.current.get());
+    // The guard fails: the next transition, its arguments read.
+    app.send_fetch_done(false, "nope");
+    try testing.expectEqualStrings("failed", app.fetch.current.get());
+    try testing.expectEqual(mui.Reason.refused, app.reason.get());
+    try testing.expect(std.mem.endsWith(u8, app.log.get(), "-loading (nope) "));
+    try testing.expect(!app.busy.get());
+
+    // After 50 ms without an answer: failed.
+    app.send_fetch_retry();
+    try testing.expectEqual(mui.Reason.none, app.reason.get());
+    advance(&t, 30);
+    try testing.expectEqualStrings("loading", app.fetch.current.get());
+    advance(&t, 30);
+    try testing.expectEqualStrings("failed", app.fetch.current.get());
+    try testing.expectEqual(mui.Reason.timeout, app.reason.get());
+
+    // Left before it is due: cancelled. Entering `ready` sends `ping`,
+    // handled after the entry action.
+    app.send_fetch_retry();
+    app.log.set("");
+    app.send_fetch_done(true, "");
+    try testing.expectEqualStrings("-loading +ready sent ping ", app.log.get());
+    try testing.expectEqual(@as(i32, 5), app.pings.get());
+    advance(&t, 100);
+    try testing.expectEqualStrings("ready", app.fetch.current.get());
+    try testing.expectEqual(mui.FetchState.ready, @as(mui.FetchState, @enumFromInt(app.fetch.last.get())));
+    try testing.expectEqualStrings("ready!", app.invoke_state_name());
+
+    // Stopped: its exit action runs, events are ignored; started again.
+    app.fetch.stop();
+    try testing.expectEqualStrings("", app.fetch.current.get());
+    // `state` keeps the last one.
+    try testing.expectEqualStrings("ready!", app.invoke_state_name());
+    app.send_fetch_go();
+    app.fetch.start();
+    try testing.expectEqualStrings("idle", app.fetch.current.get());
+
+    // `running: false`: not started until asked.
+    try testing.expectEqualStrings("", app.lamp.current.get());
+    app.send_lamp_toggle();
+    app.lamp.start();
+    app.send_lamp_toggle();
+    try testing.expectEqualStrings("on", app.lamp.current.get());
+
+    // The global's: sent from the component, its actions setting the
+    // global's properties; after 100 ms without `signed-in`, signed out.
+    try testing.expect(!app.signed_in.get());
+    app.invoke_sign_in("ada");
+    try testing.expectEqualStrings("ada", mui.Session.instance.user.get());
+    try testing.expectEqualStrings("signing-in", mui.Session.instance.machine.current.get());
+    advance(&t, 150);
+    try testing.expectEqualStrings("signed-out", mui.Session.instance.machine.current.get());
+    try testing.expectEqualStrings("", mui.Session.instance.user.get());
+    app.invoke_sign_in("bob");
+    mui.Session.instance.send_machine_signed_in();
+    try testing.expect(app.signed_in.get());
+    try testing.expectEqual(@as(i32, 1), mui.Session.instance.sign_ins.get());
+}
+
+test "the crossing example: two regions in step, the cars' light and the pedestrians'" {
+    const tui = @import("traffic_ui");
+    const app = try tui.Traffic.create(gpa);
+    defer app.destroy();
+    var t = zigulee.core.now();
+    const advance = struct {
+        fn by(clock: *u64, ms: u64) void {
+            clock.* += ms;
+            zigulee.updateTimersAndAnimations(clock.*);
+            zigulee.runChangeHandlers();
+        }
+    }.by;
+    const lit = struct {
+        fn f(r: *zigulee.items.Rectangle, color: u24) bool {
+            return r.background.get().eql(.color(.rgb(color)));
+        }
+    }.f;
+    zigulee.runChangeHandlers();
+    try testing.expectEqualStrings("crossing/cars/green, crossing/walkers/dont-walk", app.light.current.get());
+    try testing.expect(lit(&app.green_lamp, 0x22c55e) and lit(&app.stop_lamp, 0xef4444));
+    // Nobody asks: the cars keep green.
+    advance(&t, 60000);
+    try testing.expectEqualStrings("crossing/cars/free, crossing/walkers/dont-walk", app.light.current.get());
+
+    // The button itself, inside the window.
+    const button = app.touch.item.absoluteGeometry();
+    const size = app.window().size();
+    try testing.expect(button.height >= 40 and button.y >= 0 and button.y + button.height <= size.height);
+    const w = app.window();
+    const mid: zigulee.core.Point = .{ .x = button.x + button.width / 2, .y = button.y + button.height / 2 };
+    w.dispatchPointer(.{ .pressed = .{ .position = mid } });
+    w.dispatchPointer(.{ .released = .{ .position = mid } });
+    try testing.expectEqualStrings("crossing/cars/yellow, crossing/walkers/dont-walk", app.light.current.get());
+    try testing.expect(lit(&app.yellow_lamp, 0xfacc15));
+    // Red: the cars tell the pedestrians, who wait for the crossing to clear.
+    advance(&t, 1000);
+    try testing.expectEqualStrings("crossing/cars/red, crossing/walkers/clearing", app.light.current.get());
+    try testing.expect(lit(&app.red_lamp, 0xef4444) and lit(&app.stop_lamp, 0xef4444));
+    advance(&t, 1000);
+    try testing.expectEqualStrings("crossing/cars/red, crossing/walkers/walk", app.light.current.get());
+    try testing.expect(lit(&app.walk_lamp, 0x22c55e) and lit(&app.red_lamp, 0xef4444));
+    try testing.expectEqual(@as(i32, 1), app.crossings.get());
+    // Hurry: the walk sign blinks.
+    advance(&t, 4000);
+    try testing.expectEqualStrings("crossing/cars/red, crossing/walkers/hurry/lit", app.light.current.get());
+    advance(&t, 250);
+    try testing.expectEqualStrings("crossing/cars/red, crossing/walkers/hurry/dark", app.light.current.get());
+    try testing.expect(lit(&app.walk_lamp, 0x1d3f26));
+    advance(&t, 250);
+    try testing.expect(lit(&app.walk_lamp, 0x22c55e));
+    // Clear: the pedestrians tell the cars, who get red and yellow, then green.
+    advance(&t, 1500);
+    try testing.expectEqualStrings("crossing/cars/red-yellow, crossing/walkers/dont-walk", app.light.current.get());
+    try testing.expect(lit(&app.red_lamp, 0xef4444) and lit(&app.yellow_lamp, 0xfacc15) and lit(&app.stop_lamp, 0xef4444));
+    advance(&t, 1000);
+    try testing.expectEqualStrings("crossing/cars/green, crossing/walkers/dont-walk", app.light.current.get());
+    try testing.expect(!app.requested.get());
+
+    // Pressed during the minimum green: served at its end.
+    advance(&t, 1000);
+    w.dispatchPointer(.{ .pressed = .{ .position = mid } });
+    w.dispatchPointer(.{ .released = .{ .position = mid } });
+    try testing.expect(app.requested.get());
+    advance(&t, 3000);
+    try testing.expectEqualStrings("crossing/cars/yellow, crossing/walkers/dont-walk", app.light.current.get());
+}
+
+test "state machines with states inside states: the parent's transitions, history, paths in active(), the enum of atomic states" {
+    const mui = @import("ui_machine");
+    const app = try mui.Machines.create(gpa);
+    defer app.destroy();
+    var t = zigulee.core.now();
+    const advance = struct {
+        fn by(clock: *u64, ms: u64) void {
+            clock.* += ms;
+            zigulee.updateTimersAndAnimations(clock.*);
+            zigulee.runChangeHandlers();
+        }
+    }.by;
+    try testing.expectEqualStrings("off", app.player.current.get());
+    // On: through its initial states (no history yet).
+    app.send_player_power();
+    try testing.expectEqualStrings("on/playing", app.player.current.get());
+    try testing.expect(!app.in_menu.get());
+    app.send_player_pause();
+    try testing.expect(app.in_menu.get());
+    app.send_player_open("song");
+    try testing.expectEqualStrings("on/menu/detail", app.player.current.get());
+    try testing.expectEqualStrings("song", app.item.get());
+    try testing.expectEqualStrings("detail!", app.invoke_player_state());
+    // `detail`'s own `back` first, then the menu's.
+    app.send_player_back();
+    try testing.expectEqualStrings("on/menu/list", app.player.current.get());
+    app.send_player_back();
+    try testing.expectEqualStrings("on/playing", app.player.current.get());
+    try testing.expectEqualStrings("+on +menu -menu ", app.trail.get());
+
+    // Off from anywhere inside `on`, and back where it was (deep history).
+    app.send_player_pause();
+    app.send_player_open("other");
+    app.trail.set("");
+    app.send_player_power();
+    try testing.expectEqualStrings("-menu -on ", app.trail.get());
+    try testing.expectEqualStrings("off", app.player.current.get());
+    app.send_player_power();
+    try testing.expectEqualStrings("on/menu/detail", app.player.current.get());
+    try testing.expectEqualStrings("-menu -on +on +menu ", app.trail.get());
+
+    // `on`'s 2 s runs from when it was entered, whatever its states do.
+    advance(&t, 1500);
+    app.send_player_back();
+    app.send_player_back();
+    advance(&t, 400);
+    try testing.expectEqualStrings("on/playing", app.player.current.get());
+    advance(&t, 200);
+    try testing.expectEqualStrings("off", app.player.current.get());
+
+    // Atomic states named alike: `a-x` and `b-x`.
+    try testing.expect(!app.invoke_twin_at_b());
+    try testing.expectEqualStrings("a/x", app.twin.current.get());
+    app.send_twin_go();
+    try testing.expectEqualStrings("b/x", app.twin.current.get());
+    try testing.expect(app.invoke_twin_at_b());
+    try testing.expectEqual(mui.TwinState.b_x, @as(mui.TwinState, @enumFromInt(app.twin.last.get())));
+}
+
+test "state machines: parallel regions, final states and done, eventless transitions, conflicts" {
+    const mui = @import("ui_machine");
+    const app = try mui.Machines.create(gpa);
+    defer app.destroy();
+    // Waiting for its guard, checked after each event.
+    try testing.expectEqualStrings("booting", app.conn.current.get());
+    app.send_conn_poke();
+    try testing.expectEqualStrings("booting", app.conn.current.get());
+    app.can_work.set(true);
+    app.send_conn_poke();
+    try testing.expectEqualStrings("working/net/offline, working/sync/idle", app.conn.current.get());
+    try testing.expectEqualStrings("offline idle", app.invoke_regions());
+    // One event, a transition in each region; `net` done.
+    app.send_conn_connect();
+    try testing.expectEqualStrings("working/net/online, working/sync/syncing", app.conn.current.get());
+    try testing.expectEqualStrings("online syncing", app.invoke_regions());
+    try testing.expectEqualStrings("work net-done ", app.steps.get());
+    // `sync` done too: `working` is, and it finishes.
+    app.send_conn_finish();
+    try testing.expectEqualStrings("finished", app.conn.current.get());
+    try testing.expectEqualStrings("work net-done synced ", app.steps.get());
+    try testing.expectEqualStrings("online synced", app.invoke_regions());
+
+    // Conflicting transitions: the first in document order kept.
+    app.conn.stop();
+    app.can_work.set(false);
+    app.conn.start();
+    app.can_work.set(true);
+    app.send_conn_poke();
+    app.send_conn_boom();
+    try testing.expectEqualStrings("working/net/online, working/sync/idle", app.conn.current.get());
+}

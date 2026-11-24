@@ -507,6 +507,8 @@ pub fn build(b: *std.Build) void {
         .{ "ui_charts", "tests/ui/charts.zge" },
         .{ "ui_http", "tests/ui/http.zge" },
         .{ "ui_scrollview", "tests/ui/scrollview.zge" },
+        .{ "ui_machine", "tests/ui/machine.zge" },
+        .{ "traffic_ui", "examples/traffic.zge" },
         .{ "network_ui", "examples/network.zge" },
     };
     var ui_imports: [ui_sources.len + 1]std.Build.Module.Import = undefined;

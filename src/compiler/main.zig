@@ -7,9 +7,14 @@
 //!     zgec fmt [--check] [--stdin] files...
 //!     zgec tr [-o messages.pot] files...
 //!     zgec c input.zge --prefix=app --header=app.h --glue=app_c.zig [--style=...]
+//!     zgec scxml machine.scxml [-o machine.zge]
 //!
 //! `zgec c` writes C bindings of the compiled components (c_bindings.zig):
 //! a header, and Zig code implementing it over the module `zgec` makes.
+//!
+//! `zgec scxml` converts an SCXML state chart to a `.zge` global holding
+//! the equivalent `StateMachine` (scxml.zig), to `-o` or standard output;
+//! what it cannot convert it says, and leaves as comments.
 //!
 //! The dependency file lists the files the input uses (images), so build
 //! systems recompile when they change.
@@ -23,6 +28,7 @@ pub fn main(init: std.process.Init) !u8 {
     if (args.len > 1 and std.mem.eql(u8, args[1], "fmt")) return formatFiles(init, arena, args[2..]);
     if (args.len > 1 and std.mem.eql(u8, args[1], "tr")) return extractTranslations(init, arena, args[2..]);
     if (args.len > 1 and std.mem.eql(u8, args[1], "c")) return cBindings(init, arena, args[2..]);
+    if (args.len > 1 and std.mem.eql(u8, args[1], "scxml")) return convertScxml(init, arena, args[2..]);
     var input: ?[]const u8 = null;
     var output: ?[]const u8 = null;
     var dep_file: ?[]const u8 = null;
@@ -43,7 +49,7 @@ pub fn main(init: std.process.Init) !u8 {
         } else input = args[i];
     }
     const in_path = input orelse {
-        std.debug.print("usage: zgec input.zge -o output.zig [--style=fluent|material|minimal|cupertino|native] [--dep-file=output.d]\n       zgec fmt [--check] [--stdin] files...\n       zgec tr [-o messages.pot] files...\n", .{});
+        std.debug.print("usage: zgec input.zge -o output.zig [--style=fluent|material|minimal|cupertino|native] [--dep-file=output.d]\n       zgec fmt [--check] [--stdin] files...\n       zgec tr [-o messages.pot] files...\n       zgec scxml machine.scxml [-o machine.zge]\n", .{});
         return 2;
     };
     const cwd = std.Io.Dir.cwd();
@@ -234,6 +240,47 @@ fn cBindings(init: std.process.Init, arena: std.mem.Allocator, args: []const []c
         .bindings => |out| {
             try cwd.writeFile(init.io, .{ .sub_path = header_path, .data = out.header });
             try cwd.writeFile(init.io, .{ .sub_path = glue orelse try std.fmt.allocPrint(arena, "{s}_c.zig", .{base}), .data = out.glue });
+            return 0;
+        },
+    }
+}
+
+/// `zgec scxml`: an SCXML document as a `.zge` global (to `-o`, or
+/// standard output); warnings, with their lines, to standard error.
+fn convertScxml(init: std.process.Init, arena: std.mem.Allocator, args: []const []const u8) !u8 {
+    var input: ?[]const u8 = null;
+    var output: ?[]const u8 = null;
+    var i: usize = 0;
+    while (i < args.len) : (i += 1) {
+        if (std.mem.eql(u8, args[i], "-o") and i + 1 < args.len) {
+            i += 1;
+            output = args[i];
+        } else input = args[i];
+    }
+    const in_path = input orelse {
+        std.debug.print("usage: zgec scxml machine.scxml [-o machine.zge]\n", .{});
+        return 2;
+    };
+    const cwd = std.Io.Dir.cwd();
+    const source = cwd.readFileAlloc(init.io, in_path, arena, .limited(16 << 20)) catch |err| {
+        std.debug.print("zgec scxml: cannot read {s}: {t}\n", .{ in_path, err });
+        return 1;
+    };
+    switch (try compiler.scxml.convert(arena, in_path, source)) {
+        .errors => |text| {
+            std.debug.print("{s}", .{text});
+            return 1;
+        },
+        .zge => |z| {
+            for (z.warnings) |w| std.debug.print("{s}:{d}: warning: {s}\n", .{ in_path, w.line, w.message });
+            if (output) |path| {
+                try cwd.writeFile(init.io, .{ .sub_path = path, .data = z.text });
+            } else {
+                var buf: [4096]u8 = undefined;
+                var stdout = std.Io.File.stdout().writer(init.io, &buf);
+                try stdout.interface.writeAll(z.text);
+                try stdout.interface.flush();
+            }
             return 0;
         },
     }

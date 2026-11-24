@@ -1171,6 +1171,8 @@ pub const Server = struct {
             .id => 6, // Variable
             .structure => 22, // Struct
             .enumeration => 20, // EnumMember (values) / Enum
+            .state => 20, // EnumMember: one of the machine's states
+            .event => 23, // Event
         };
     }
 

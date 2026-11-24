@@ -222,6 +222,120 @@ test "interpreted programs match the compiled ones" {
     try compare(@import("ui_strfn"), "tests/ui/strfn.zge", &font);
     try compare(@import("ui_textfit"), "tests/ui/textfit.zge", &font);
     try compare(@import("ui_scrollview"), "tests/ui/scrollview.zge", &font);
+    try compare(@import("ui_machine"), "tests/ui/machine.zge", &font);
+    try compare(@import("traffic_ui"), "examples/traffic.zge", &font);
     // Every window component of those files was compared.
-    try testing.expectEqual(@as(usize, 44), compared);
+    try testing.expectEqual(@as(usize, 46), compared);
+}
+
+test "the traffic light example, interpreted as the viewer runs it: the button clicked, timers fired" {
+    const path = build_options.root ++ "/examples/traffic.zge";
+    const source = try std.Io.Dir.cwd().readFileAlloc(testing.io, path, gpa, .limited(1 << 20));
+    defer gpa.free(source);
+    const prog = switch (try interp.Program.load(gpa, path, source, .{})) {
+        .program => |p| p,
+        .errors => |e| {
+            defer gpa.free(e);
+            std.debug.print("{s}\n", .{e});
+            return error.TestUnexpectedResult;
+        },
+    };
+    defer prog.destroy();
+    const app = try prog.create(prog.mainComponent().?);
+    defer app.destroy();
+    // Where the compiled one has its button: the same layout.
+    const compiled = try @import("traffic_ui").Traffic.create(gpa);
+    const button = compiled.touch.item.absoluteGeometry();
+    compiled.destroy();
+
+    // The clock starts later than the instance (a backend's first frame).
+    var t = core.now() + 100_000;
+    const step = struct {
+        fn by(clock: *u64, ms: u64) void {
+            clock.* += ms;
+            zigulee.updateTimersAndAnimations(clock.*);
+            zigulee.runChangeHandlers();
+        }
+    }.by;
+    step(&t, 20);
+    step(&t, 5000);
+    const w = app.window().?;
+    const mid: core.Point = .{ .x = button.x + button.width / 2, .y = button.y + button.height / 2 };
+    w.dispatchPointer(.{ .pressed = .{ .position = mid } });
+    w.dispatchPointer(.{ .released = .{ .position = mid } });
+    step(&t, 20);
+    try testing.expect(app.property("requested").?.get().bool);
+    // Yellow, red, clearance, walk.
+    step(&t, 1000);
+    step(&t, 1000);
+    try testing.expectEqual(@as(i32, 1), app.property("crossings").?.get().int);
+    // Walk, hurry, red and yellow: green again.
+    step(&t, 4000);
+    step(&t, 2000);
+    step(&t, 1000);
+    try testing.expect(!app.property("requested").?.get().bool);
+}
+
+test "the microwave of the SCXML specification, converted (examples/scxml/microwave.scxml) and run" {
+    const path = build_options.root ++ "/examples/scxml/microwave.scxml";
+    const doc = try std.Io.Dir.cwd().readFileAlloc(testing.io, path, gpa, .limited(1 << 20));
+    defer gpa.free(doc);
+    var arena: std.heap.ArenaAllocator = .init(gpa);
+    defer arena.deinit();
+    const z = switch (try interp.compiler.scxml.convert(arena.allocator(), path, doc)) {
+        .zge => |z| z,
+        .errors => |e| {
+            std.debug.print("{s}\n", .{e});
+            return error.TestUnexpectedResult;
+        },
+    };
+    // Nothing left out.
+    for (z.warnings) |w| std.debug.print("warning: {d}: {s}\n", .{ w.line, w.message });
+    try testing.expectEqual(@as(usize, 0), z.warnings.len);
+    const source = try std.mem.concat(arena.allocator(), u8, &.{
+        z.text,
+        \\
+        \\export component Harness inherits Window {
+        \\    var out <string> at: Microwave.machine.current;
+        \\    var out <int> ticks: Microwave.timer;
+        \\    public function send(name: string) {
+        \\        if name == "on" { Microwave.machine.turn_on(); }
+        \\        if name == "time" { Microwave.machine.time(); }
+        \\        if name == "open" { Microwave.machine.door_open(); }
+        \\        if name == "close" { Microwave.machine.door_close(); }
+        \\    }
+        \\}
+    });
+    const prog = switch (try interp.Program.load(gpa, "microwave.zge", source, .{})) {
+        .program => |p| p,
+        .errors => |e| {
+            defer gpa.free(e);
+            std.debug.print("{s}\n", .{e});
+            return error.TestUnexpectedResult;
+        },
+    };
+    defer prog.destroy();
+    const app = try prog.create(prog.component("Harness").?);
+    defer app.destroy();
+    const send = struct {
+        fn f(a: *interp.Instance, what: []const u8) void {
+            _ = a.call("send", &.{.{ .string = what }}, gpa);
+        }
+    }.f;
+    try testing.expectEqualStrings("oven/engine/off, oven/door/closed", app.property("at").?.get().string);
+    // On with the door closed: cooking at once (eventless, In('closed')).
+    send(app, "on");
+    try testing.expectEqualStrings("oven/engine/on/cooking, oven/door/closed", app.property("at").?.get().string);
+    send(app, "time");
+    send(app, "time");
+    // The door opened: idle, the time kept.
+    send(app, "open");
+    try testing.expectEqualStrings("oven/engine/on/idle, oven/door/open", app.property("at").?.get().string);
+    send(app, "time");
+    try testing.expectEqual(@as(i32, 2), app.property("ticks").?.get().int);
+    send(app, "close");
+    // Done after 5 ticks: off, the timer back to 0.
+    for (0..3) |_| send(app, "time");
+    try testing.expectEqualStrings("oven/engine/off, oven/door/closed", app.property("at").?.get().string);
+    try testing.expectEqual(@as(i32, 0), app.property("ticks").?.get().int);
 }

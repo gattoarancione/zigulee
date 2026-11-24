@@ -420,6 +420,7 @@ fn ZigType(comptime name: []const u8) type {
         .{ "Path", items.Path },
         .{ "TextInput", items.TextInput },
         .{ "Flickable", items.Flickable },
+        .{ "StateMachine", core.statemachine.StateMachine },
         .{ "Timer", items.TimerElement },
         .{ "Audio", items.AudioElement },
         .{ "Video", items.VideoElement },

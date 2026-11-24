@@ -18,6 +18,7 @@ knows.
 - [Repetition and conditions](#repetition-and-conditions)
 - [States and animations](#states-and-animations)
 - [Reacting to changes](#reacting-to-changes)
+- [State machines](#state-machines)
 - [Structs and enums](#structs-and-enums)
 - [Globals](#globals)
 - [Files and imports](#files-and-imports)
@@ -1128,6 +1129,205 @@ export component Watch inherits Window {
     changed value => { changes += 1; }
 }
 ```
+
+## State machines
+
+A `StateMachine` (not drawn) holds states, the events that move between
+them, and what runs on the way, with the semantics of
+[SCXML](https://www.w3.org/TR/scxml/) statecharts:
+
+```slint
+enum Why { none, timeout, refused }
+
+export component Fetcher inherits Window {
+    width: 200px;
+    height: 100px;
+    var out <Why> why;
+    var out <bool> busy: fetch.active(loading);
+
+    fetch := StateMachine {
+        event go;
+        event done(bool);
+
+        initial idle;
+
+        state idle {
+            on go => loading;
+        }
+        state loading {
+            entered => { spinner.visible = true; }
+            exited => { spinner.visible = false; }
+            on done(ok) when ok => ready;
+            on done(ok) => idle { why = Why.refused; }
+            after 5s => idle { why = Why.timeout; }
+        }
+        state ready {
+            on go => loading;
+        }
+    }
+    spinner := Rectangle { visible: false; background: gray; }
+    TouchArea { clicked => { fetch.go(); } }
+}
+```
+
+- `event name(types);` declares an event. It is sent by calling it,
+  `fetch.done(true)`, from handlers and functions (and from Zig:
+  `app.send_fetch_done(true)`). Its arguments are bools, ints, floats,
+  lengths, strings or enum values (four at most); a misspelt event or a
+  wrong argument is a compile error.
+- `state name { ... }` is a state; the machine starts in its first one, or
+  the one `initial name;` names.
+- In a state, `entered => { }` and `exited => { }` run when it is entered
+  and left.
+- `on event(params) when guard => target { actions }` is a transition:
+  taken when the event comes while its state is active and its guard holds,
+  the guard and the actions reading the event's arguments by the names
+  given there. Each part after the event is optional: without a guard it is
+  always taken, without `=> target` it is internal (no state is left or
+  entered, `entered` and `exited` do not run), and without actions it ends
+  with `;`.
+- `after duration => target { actions }` is taken once its state has been
+  active that long; leaving the state first cancels it.
+
+Events are processed one at a time, each to completion: for the active
+state, the first transition in order whose event matches and whose guard
+holds is taken; the exit actions run, then the transition's actions, then
+the entry actions of the state entered. An event sent while the machine is
+busy (from its own actions) waits until the step is done, and events the
+machine sends itself are processed before those from outside. The step
+runs when the event is sent, not between frames: right after
+`fetch.go()`, `fetch.active(loading)` is true.
+
+States can hold states. A state with states inside is active together
+with one of them: its `initial` one (`initial name;` inside it, else its
+first) when it is entered. Its transitions apply to every state inside
+it, after their own (the innermost state's transitions are looked at
+first, then those of the state around it, and so on out), and its `after`
+runs from when it was entered, whatever happens inside:
+
+```slint
+export component Player inherits Window {
+    width: 200px;
+    height: 100px;
+    player := StateMachine {
+        event power;
+        event pause;
+        event back;
+        state off {
+            on power => on.history;
+        }
+        state on {
+            history;
+            on power => off;
+            after 600s => off;
+            state playing {
+                on pause => menu;
+            }
+            state menu {
+                on back => playing;
+                state list { }
+                state detail {
+                    on back => list;
+                }
+            }
+        }
+    }
+}
+```
+
+A transition leaves the active states up to the innermost one around both
+its state and its target, innermost first, and enters from there down to
+the target, then through the target's initial states down to one with no
+states inside: from `on.menu.detail`, `power` leaves `detail`, `menu` and
+`on`, then enters `off`. `history;` in a state makes it remember which of
+its states was active when it was left; a transition to `on.history`
+enters `on` back in that state (and that state's initial ones), or its
+initial state the first time. With `history deep;` it goes back to the
+state that was active at the very inside (`on.menu.detail` above, rather
+than `on.menu.list`).
+
+A state is named by its name where that is enough, else by its path,
+`menu.detail`; `x.history` names x's history. A name in a transition is
+looked for near the transition's state first (among the states inside its
+parent), then a level further out, up to the whole machine; from outside
+the machine (`active()`), from the top. The compiler says when a name is
+ambiguous, and lists the paths to choose from.
+
+A `parallel` state's states are all active together, each a region with
+its own active state, and an event can take a transition in each:
+
+```slint
+export component Uploader inherits Window {
+    width: 200px;
+    height: 100px;
+    var in-out <bool> ready;
+    var out <bool> uploading: up.active(transfer);
+    up := StateMachine {
+        event connect;
+        event sent;
+        event cancel;
+        state setup {
+            when root.ready => transfer;
+        }
+        parallel transfer {
+            on cancel => setup;
+            on done.transfer => over;
+            state net {
+                state offline { on connect => online; }
+                final online;
+            }
+            state data {
+                state sending { on sent => all-sent; }
+                final all-sent;
+            }
+        }
+        final over;
+    }
+}
+```
+
+`final name;` is a final state (`final name { entered => { } }` with entry
+and exit actions; it has no transitions or states inside). Entering a
+final state raises `done.<state>` for the state around it, and a parallel
+state is done once all its regions are: `on done.transfer => over;` above.
+A final state at the top of a machine ends its work: it stays there.
+
+`when guard => target { actions }`, with no event, is taken as soon as its
+guard holds: when its state is entered, and after each event (as in SCXML,
+a change of what the guard reads is noticed at the next event, not
+before). Taken one after another more than 100 times in a row, eventless
+transitions wait for the next event, with an error logged.
+
+When transitions in different regions would leave the same states (one
+leaving the whole parallel state, say), they conflict: the one from a
+state inside the other's is taken, else the first in the file.
+
+`active(name)` says whether a state is active, a state with states inside
+being active with any of them (`active(on)`, `active(on.menu)`). In
+bindings it follows the machine, as `busy` above does, and `states [...]`
+can use it to show states. `current` is the path of the innermost active
+state, joined by `/` (`"on/menu/detail"`; several, with parallel regions,
+joined by `, `; `""` when stopped), and `state` is it as a value of an enum
+made for the machine, named after its id with `State` after it
+(`FetchState` above: `fetch.state == ready`, or `ui.FetchState` in Zig).
+The enum has a value for each state with no states inside, named after it,
+or after its path (`a-x`, `b-x`) where two share a name; with parallel
+regions, `state` is the first active one, and each region has its own:
+`<region>-state`, of the enum `<Id><Region>State` (`up.net-state ==
+online`, of `UpNetState`). After `stop()` they keep the last state.
+
+A machine runs from when its component is made, unless `running: false`;
+`start()` enters its initial state again, `stop()` leaves the active one
+(its exit actions run) and ignores events until started. A `global` can
+hold machines too, for state the whole program shares (a session signed in
+or out), used as `Session.machine.active(signed-in)` and
+`Session.machine.sign-in(name)`.
+
+`examples/traffic.zge` is a pedestrian crossing driven by one, its cars'
+and pedestrians' lights two parallel regions kept in step by events
+(`zigulee-viewer examples/traffic.zge`). `zgec scxml` converts SCXML
+state charts into machines (tooling.md, "SCXML"), and
+docs/proposals/state-machine.md has the design.
 
 ## Structs and enums
 

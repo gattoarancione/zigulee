@@ -1,0 +1,195 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// State machines: a fetch with a timeout in a component, a session in a
+// global.
+
+export global Session {
+    var out <string> user;
+    var out <int> sign-ins;
+    machine := StateMachine {
+        event sign-in(string);
+        event signed-in;
+        event sign-out;
+        state signed-out {
+            on sign-in(name) => signing-in { user = name; }
+        }
+        state signing-in {
+            on signed-in => signed-in { sign-ins += 1; }
+            after 100ms => signed-out { user = ""; }
+        }
+        state signed-in {
+            on sign-out => signed-out { user = ""; }
+        }
+    }
+}
+
+enum Reason { none, timeout, refused }
+
+export component Machines inherits Window {
+    width: 200px;
+    height: 100px;
+    var out <string> log;
+    var out <Reason> reason: Reason.none;
+    var in-out <int> pings;
+    var out <bool> busy: fetch.active(loading);
+    var out <bool> signed-in: Session.machine.active(signed-in);
+
+    fetch := StateMachine {
+        event go;
+        event done(bool, string);
+        event ping(int);
+        event retry;
+
+        initial idle;
+
+        state idle {
+            entered => { root.log += "+idle "; }
+            exited => { root.log += "-idle "; }
+            on go => loading { root.log += "go "; }
+        }
+        state loading {
+            entered => { root.log += "+loading "; }
+            exited => { root.log += "-loading "; }
+            on done(ok, why) when ok => ready;
+            on done(ok, why) => failed {
+                root.reason = Reason.refused;
+                root.log += "(\{why}) ";
+            }
+            on ping(n) when n > 0 { root.pings += n; }
+            after 50ms => failed { root.reason = Reason.timeout; }
+        }
+        state ready {
+            entered => {
+                root.log += "+ready ";
+                // Its own event: after this step.
+                fetch.ping(2);
+                root.log += "sent ";
+            }
+            on ping(n) { root.pings += n; root.log += "ping "; }
+            on go => loading;
+        }
+        state failed {
+            on retry => loading { root.reason = Reason.none; }
+        }
+    }
+
+    // States inside states: a player, its menu inside `on`; `on` keeps a
+    // deep history, and goes off after 2 s whatever its states do.
+    var out <string> trail;
+    var out <string> item;
+    var out <bool> in-menu: player.active(on.menu);
+    player := StateMachine {
+        event power;
+        event pause;
+        event back;
+        event open(string);
+        state off {
+            on power => on.history;
+        }
+        state on {
+            history deep;
+            entered => { root.trail += "+on "; }
+            exited => { root.trail += "-on "; }
+            on power => off;
+            after 2s => off;
+            state playing {
+                on pause => menu;
+            }
+            state menu {
+                initial list;
+                entered => { root.trail += "+menu "; }
+                exited => { root.trail += "-menu "; }
+                on back => playing;
+                state list {
+                    on open(name) => detail { root.item = name; }
+                }
+                // Its own `back` before the menu's.
+                state detail {
+                    on back => list;
+                }
+            }
+        }
+    }
+
+    // Two atomic states named alike: the enum says their paths.
+    twin := StateMachine {
+        event go;
+        state a { state x { on go => b.x; } }
+        state b { state x {} }
+    }
+
+    // Regions side by side, final states and `done`, an eventless
+    // transition.
+    var in-out <bool> can-work;
+    var out <string> steps;
+    conn := StateMachine {
+        event connect;
+        event finish;
+        event boom;
+        event poke;
+        state booting {
+            when root.can-work => working { root.steps += "work "; }
+        }
+        parallel working {
+            on done.working => finished;
+            state net {
+                on done.net { root.steps += "net-done "; }
+                state offline {
+                    on connect => online;
+                    on boom => online;
+                }
+                final online;
+            }
+            state sync {
+                state idle {
+                    on connect => syncing;
+                    // Would leave all of `working`: loses to `offline`'s.
+                    on boom => booting;
+                }
+                state syncing {
+                    on finish => synced;
+                }
+                final synced {
+                    entered => { root.steps += "synced "; }
+                }
+            }
+        }
+        final finished;
+    }
+
+    // A second machine, not running until started.
+    lamp := StateMachine {
+        running: false;
+        event toggle;
+        state off { on toggle => on; }
+        state on { on toggle => off; }
+    }
+
+    box := Rectangle { background: #ffffff; }
+    states [
+        working when fetch.active(loading) : { box.background: #ff0000; }
+    ]
+
+    public function sign-in(name: string) {
+        Session.machine.sign-in(name);
+    }
+    public function player-state() -> string {
+        if player.state == detail {
+            return "detail!";
+        }
+        return player.current;
+    }
+    public function twin-at-b() -> bool {
+        return twin.state == b-x;
+    }
+    public function regions() -> string {
+        return (conn.net-state == online ? "online" : "offline") + " " + (conn.sync-state == syncing ? "syncing" : conn.sync-state == synced ? "synced" : "idle");
+    }
+    public function state-name() -> string {
+        if fetch.state == ready {
+            return "ready!";
+        }
+        return fetch.current;
+    }
+}

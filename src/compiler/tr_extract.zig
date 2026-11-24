@@ -159,8 +159,20 @@ const Collector = struct {
                 try c.expr(s.condition);
                 for (s.assignments) |a| try c.expr(a.value);
             },
-            .animate, .callback, .children_placeholder => {},
+            .machine_state => |*st| try c.machineState(st),
+            .animate, .callback, .children_placeholder, .event, .initial => {},
         };
+    }
+
+    fn machineState(c: *Collector, st: *const ast.MachineState) Error!void {
+        if (st.entered) |b| try c.stmts(b);
+        if (st.exited) |b| try c.stmts(b);
+        for (st.transitions) |t| {
+            if (t.trigger == .after) try c.expr(t.trigger.after);
+            if (t.guard) |g| try c.expr(g);
+            try c.stmts(t.actions);
+        }
+        for (st.children) |*child| try c.machineState(child);
     }
 
     fn stmts(c: *Collector, list: []const ast.Stmt) Error!void {

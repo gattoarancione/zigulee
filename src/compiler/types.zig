@@ -1032,6 +1032,22 @@ pub const builtins = [_]Builtin{
         },
     },
     .{
+        .name = "StateMachine",
+        .doc = "A state machine (statechart), with SCXML's semantics; not drawn. `event name(types);` declares an event, sent by calling it: `machine.name(args)`. `state name { ... }` declares a state (the first, or the one named by `initial name;`, is entered first); in it, `entered => { }` and `exited => { }` run on entering and leaving it, `on event(params) when guard => target { actions }` is a transition (the guard, the target and the actions each optional: without a target it neither leaves nor enters a state), `after duration ...` one taken once the state has been active that long. States can hold states (`initial name;` inside one names the first, `history;` or `history deep;` makes it remember where it was, entered back by targeting `name.history`); a state's transitions apply to those inside it, after their own, and a state is named by its name (looked for near the transition first) or, where that is ambiguous, its path (`menu.detail`). `parallel name { ... }` holds regions all active together (`<region>-state` reads each one's state); `final name;` is a final state, entering it raises `done.<parent>` (`on done.x => ...`; a parallel state is done when all its regions are); `when guard => target` is taken as soon as its guard holds (checked on entry and after each event). Events are processed one at a time to completion, those its own actions send before those from outside; the first enabled transition in order is taken; exit actions run before the transition's actions, before entry actions. `active(name)` says whether a state is active (one with states inside, with any of them), `current` is the innermost active state's path (`on/menu/detail`; \"\" when stopped), `state` is it as a value of the enum `<Id>State` made for the machine. It runs from when its component is made unless `running` is false; `start()` and `stop()` start it again and stop it (exit actions run).",
+        .zig_type = "zigulee.core.statemachine.StateMachine",
+        .init_call = "init(gpa)",
+        .children = false,
+        .in_tree = false,
+        .props = &.{
+            .{ .name = "running", .ty = .bool, .zig = "running" },
+            .{ .name = "current", .ty = .string, .zig = "current", .read_only = true },
+        },
+        .functions = &.{
+            .{ .name = "start", .zig = "start" },
+            .{ .name = "stop", .zig = "stop" },
+        },
+    },
+    .{
         .name = "Timer",
         .doc = "Calls `triggered` every `interval` while `running`. `start()` and `stop()` set and clear `running`; `restart()` runs it from now, the next `triggered` a whole `interval` away. Not drawn.",
         .zig_type = "zigulee.items.TimerElement",

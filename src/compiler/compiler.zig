@@ -18,6 +18,8 @@ pub const format = @import("format.zig").format;
 pub const index = @import("index.zig");
 pub const Index = index.Index;
 pub const tr_extract = @import("tr_extract.zig");
+pub const scxml = @import("scxml.zig");
+pub const xml = @import("xml.zig");
 /// Fuzz targets, for tools/fuzz.zig.
 pub const fuzz_targets = @import("fuzz_test.zig");
 
@@ -147,6 +149,8 @@ test {
     _ = @import("compiler_test.zig");
     _ = @import("std_widgets.zig");
     _ = @import("format.zig");
+    _ = @import("xml.zig");
+    _ = @import("scxml_test.zig");
     _ = tr_extract;
     _ = @import("fuzz_test.zig");
 }

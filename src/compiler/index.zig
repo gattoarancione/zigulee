@@ -18,6 +18,9 @@ pub const Kind = enum {
     id,
     structure,
     enumeration,
+    /// A `StateMachine`'s.
+    state,
+    event,
 
     pub fn word(k: Kind) []const u8 {
         return switch (k) {
@@ -30,6 +33,8 @@ pub const Kind = enum {
             .id => "id",
             .structure => "struct",
             .enumeration => "enum",
+            .state => "state",
+            .event => "event",
         };
     }
 };

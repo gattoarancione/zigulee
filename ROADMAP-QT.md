@@ -73,7 +73,7 @@ Legend: ✅ done · 🟡 partial · ❌ missing.
 | `onXChanged` | `changed x =>` (batched) | ✅ |
 | Behavior, NumberAnimation, ColorAnimation | `animate` (duration, delay, easing, iterations) | ✅ |
 | Translations (`qsTr`, plurals) | `@tr` with plurals | ✅ |
-| States and Transitions | `states` with in/out animations (no state groups) | 🟡 |
+| States and Transitions | `states` with in/out animations (no state groups); `StateMachine` with SCXML semantics (events, guards, entry and exit actions, `after`; flat for now: nesting, history and parallel regions planned) | 🟡 |
 | Attached properties (`Layout.*`, `Keys.*`) | plain properties (`row`, `col`, constraints) | 🟡 |
 | ListModel, ObjectModel, proxy models | `[T]`, `Model(T)` from Zig, `filter`/`sort`/`reverse` in the language (no editable ListModel in `.zge`) | 🟡 |
 | C++/Python integration (QObject) | Zig integration, C API | 🟡 different |

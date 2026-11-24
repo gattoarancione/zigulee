@@ -1,0 +1,171 @@
+// Copyright (c) 2026 Claudio Russo
+// SPDX-License-Identifier: MIT
+
+// A pedestrian crossing, as a state machine with two regions running side
+// by side: the cars' light and the pedestrians' light. The cars keep green
+// until someone presses the button (at least 4 seconds of it: a press
+// during them waits), then get yellow and red; once they have stopped, the
+// pedestrians get a moment of clearance, then walk, then a blinking walk
+// sign to hurry; once they are clear, the cars get red and yellow, then
+// green. The regions keep in step by sending events to their own machine:
+// `cars-stopped` from the cars' red, `walkers-clear` from the pedestrians.
+// zigulee-viewer examples/traffic.zge
+
+export component Traffic inherits Window {
+    title: "Pedestrian crossing";
+    width: 320px;
+    height: 420px;
+    background: #1f2937;
+    var out <bool> requested;
+    var out <int> crossings;
+
+    light := StateMachine {
+        event request;
+        event cars-stopped;
+        event walkers-clear;
+
+        parallel crossing {
+            // The cars' light.
+            state cars {
+                // The minimum green: a press waits for its end.
+                state green {
+                    on request { root.requested = true; }
+                    after 4s => free;
+                }
+                // Green for as long as nobody asks to cross; a press
+                // remembered from `green` is served at once.
+                state free {
+                    entered => {
+                        if root.requested {
+                            light.request();
+                        }
+                    }
+                    on request => yellow { root.requested = true; }
+                }
+                state yellow {
+                    after 1s => red;
+                }
+                // Red until the pedestrians are clear.
+                state red {
+                    entered => { light.cars-stopped(); }
+                    on walkers-clear => red-yellow;
+                }
+                state red-yellow {
+                    after 1s => green { root.requested = false; }
+                }
+            }
+            // The pedestrians' light.
+            state walkers {
+                state dont-walk {
+                    on cars-stopped => clearing;
+                }
+                // A moment for the last cars to clear the crossing.
+                state clearing {
+                    after 1s => walk;
+                }
+                state walk {
+                    entered => { root.crossings += 1; }
+                    after 4s => hurry;
+                }
+                // The walk sign blinks: its states take turns.
+                state hurry {
+                    after 2s => dont-walk { light.walkers-clear(); }
+                    state lit {
+                        after 250ms => dark;
+                    }
+                    state dark {
+                        after 250ms => lit;
+                    }
+                }
+            }
+        }
+    }
+
+    VerticalLayout {
+        padding: 24px;
+        spacing: 16px;
+        alignment: center;
+        HorizontalLayout {
+            alignment: center;
+            spacing: 32px;
+            // The cars' light.
+            VerticalLayout {
+                spacing: 8px;
+                alignment: start;
+                Rectangle {
+                    width: 88px;
+                    height: 240px;
+                    border-radius: 16px;
+                    background: #111827;
+                    VerticalLayout {
+                        padding: 12px;
+                        spacing: 12px;
+                        alignment: center;
+                        red-lamp := Rectangle {
+                            width: 64px;
+                            height: 64px;
+                            border-radius: 32px;
+                            background: light.active(cars.red) || light.active(red-yellow) ? #ef4444 : #3f1d1d;
+                        }
+                        yellow-lamp := Rectangle {
+                            width: 64px;
+                            height: 64px;
+                            border-radius: 32px;
+                            background: light.active(yellow) || light.active(red-yellow) ? #facc15 : #3f3a1d;
+                        }
+                        green-lamp := Rectangle {
+                            width: 64px;
+                            height: 64px;
+                            border-radius: 32px;
+                            background: light.active(cars.green) || light.active(free) ? #22c55e : #1d3f26;
+                        }
+                    }
+                }
+                Text { text: "Cars"; color: #9ca3af; horizontal-alignment: center; }
+            }
+            // The pedestrians' light.
+            VerticalLayout {
+                spacing: 8px;
+                alignment: start;
+                Rectangle {
+                    width: 88px;
+                    height: 164px;
+                    border-radius: 16px;
+                    background: #111827;
+                    VerticalLayout {
+                        padding: 12px;
+                        spacing: 12px;
+                        alignment: center;
+                        stop-lamp := Rectangle {
+                            width: 64px;
+                            height: 64px;
+                            border-radius: 8px;
+                            background: light.active(dont-walk) || light.active(clearing) ? #ef4444 : #3f1d1d;
+                            Text { text: "STOP"; color: #111827; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
+                        }
+                        walk-lamp := Rectangle {
+                            width: 64px;
+                            height: 64px;
+                            border-radius: 8px;
+                            background: light.active(walk) || light.active(lit) ? #22c55e : #1d3f26;
+                            Text { text: "WALK"; color: #111827; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
+                        }
+                    }
+                }
+                Text { text: "Pedestrians"; color: #9ca3af; horizontal-alignment: center; }
+            }
+        }
+        Text {
+            horizontal-alignment: center;
+            color: #e5e7eb;
+            text: light.walkers-state == walk ? "Walk" : light.active(hurry) ? "Hurry up" : root.requested ? "Wait…" : "Press to cross";
+        }
+        Rectangle {
+            height: 40px;
+            border-radius: 8px;
+            background: touch.pressed ? #4b5563 : #374151;
+            Text { text: "Cross"; color: #ffffff; horizontal-alignment: center; vertical-alignment: center; }
+            touch := TouchArea { clicked => { light.request(); } }
+        }
+    }
+}

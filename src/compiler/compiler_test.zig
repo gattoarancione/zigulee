@@ -389,3 +389,86 @@ test "a file imported by two paths is one file: its globals once" {
     try testing.expectEqual(@as(usize, 1), std.mem.count(u8, zig, "const State = struct"));
     try testing.expect(std.mem.indexOf(u8, zig, "State__1") == null);
 }
+
+test "state machines: errors, and what the index records of states and events" {
+    try expectError("component A { m := StateMachine { } }", "a StateMachine needs at least one state");
+    try expectError("component A { m := StateMachine { state a { } state a { } } }", "state 'a' is declared twice");
+    try expectError("component A { m := StateMachine { event start; state a { } } }", "'start' is a member of every StateMachine");
+    try expectError("component A { m := StateMachine { state a { on go => a; } } }", "no event 'go' in this machine");
+    try expectError("component A { m := StateMachine { event go; state a { on go => b; } } }", "no state 'b' in this machine");
+    try expectError("component A { m := StateMachine { initial b; state a { } } }", "no state 'b' at the top of this machine");
+    try expectError("component A { m := StateMachine { event go(int); state a { on go(x, y) => a; } } }", "'go' has 1 argument(s)");
+    try expectError("component A { m := StateMachine { event go(color); state a { } } }", "events cannot take a color yet");
+    // States inside states.
+    try expectError("component A { m := StateMachine { event go; state a { state x { } } state b { state x { } } state c { on go => x; } } }", "'x' names several states: write its path (a.x, b.x)");
+    try expectError("component A { m := StateMachine { event go; state a { state x { } } state c { on go => a.y; } } }", "no state 'a.y' in this machine");
+    try expectError("component A { m := StateMachine { event go; state a { state x { } } state c { on go => a.history; } } }", "'a' keeps no history: add `history;` to it");
+    try expectError("component A { m := StateMachine { state a { history; } } }", "only a state with states inside keeps a history");
+    try expectError("component A { m := StateMachine { state a { initial y; state x { } } } }", "no state 'y' inside 'a'");
+    try expectError("component A { m := StateMachine { state a { initial y; } } }", "'a' has no states inside for 'initial' to name");
+    try expectError("component A { m := StateMachine { state a { state history { } } } }", "'history' cannot name a state");
+    try expectError("component A { m := StateMachine { state a { state x { } state x { } } } }", "state 'x' is declared twice");
+    try expectError("component A { m := StateMachine { state a { history; state x { } } } var <bool> b: m.active(a.history); }", "a history is not a state");
+    try expectError("component A { m := StateMachine { event go; state a { on go; } } }", "expected '=>' and a state, or '{' and actions");
+    try expectError("component A { m := StateMachine { state a { } } var <bool> b: m.active(z); }", "no state 'z' in this machine");
+    try expectError("component A { m := StateMachine { state a { } Rectangle { } } }", "holds events and states, not elements");
+    try expectError("component A { m := StateMachine { state a { } } function f() { m.state = a; } }", "cannot assign to this property");
+    try expectError("global G { r := Rectangle { } }", "a global cannot contain elements");
+    // Parallel and final states, done, eventless transitions.
+    try expectError("component A { m := StateMachine { event go; final f { on go => f; } } }", "a final state has only 'entered' and 'exited'");
+    try expectError("component A { m := StateMachine { parallel p { } } }", "a parallel state needs states inside");
+    try expectError("component A { m := StateMachine { parallel p { initial a; state a { } state b { } } } }", "a parallel state's states are all entered");
+    try expectError("component A { m := StateMachine { state a { on done.a => b; } state b { } } }", "'a' has no states inside: it is never done");
+    try expectError("component A { m := StateMachine { event net-state; parallel p { state net { } } } }", "'net-state' would take the name of a member of this machine");
+    try expectError("component A { m := StateMachine { state a { when 1 => a; } } }", "expected bool");
+    // Names are looked for near the transition first: `on` in each region.
+    var names: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer names.deinit();
+    _ = try compileOk(names.allocator(), "component A { m := StateMachine { event go; parallel p { state a { state off { on go => on; } state on { } } state b { state off { on go => on; } state on { } } } } }");
+    // From the top, the same name is ambiguous.
+    try expectError("component A { m := StateMachine { event go; parallel p { state a { state on { } } state b { state on { } } } } var <bool> x: m.active(on); }", "'on' names several states: write its path (p.a.on, p.b.on)");
+
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const source =
+        \\export component A inherits Window {
+        \\    var out <bool> on: m.active(lit);
+        \\    m := StateMachine {
+        \\        event toggle(bool);
+        \\        initial dark;
+        \\        state dark { on toggle(x) when x => lit; }
+        \\        state lit { on toggle => dark; }
+        \\    }
+        \\    function flip() { m.toggle(true); }
+        \\}
+    ;
+    var ix: compiler.Index = .{ .arena = a };
+    _ = try compileOk2(a, source, &ix);
+    const at = struct {
+        fn f(s: []const u8, needle: []const u8, nth: usize) u32 {
+            var from: usize = 0;
+            var i: usize = 0;
+            while (true) : (i += 1) {
+                const pos = std.mem.indexOfPos(u8, s, from, needle).?;
+                if (i == nth) return @intCast(pos);
+                from = pos + 1;
+            }
+        }
+    }.f;
+    // `lit` in `active(lit)`: the state, declared at `state lit`.
+    const lit = ix.referenceAt(0, at(source, "lit", 0)).?;
+    const sym = ix.symbols.items[lit.symbol];
+    try testing.expectEqual(compiler.index.Kind.state, sym.kind);
+    try testing.expectEqualStrings("state lit (m)", sym.detail);
+    try testing.expectEqual(at(source, "lit {", 0), sym.decl.?.span.start);
+    // `active(lit)`, `=> lit` and its declaration.
+    try testing.expectEqual(@as(usize, 3), (try ix.referencesTo(a, lit.symbol)).len);
+    // The event: declared, waited for twice, sent once.
+    const toggle = ix.referenceAt(0, at(source, "toggle(true)", 0)).?;
+    try testing.expectEqualStrings("event toggle(bool) (m)", ix.symbols.items[toggle.symbol].detail);
+    try testing.expectEqual(@as(usize, 4), (try ix.referencesTo(a, toggle.symbol)).len);
+    // `initial dark` too.
+    const dark = ix.referenceAt(0, at(source, "dark;", 0)).?;
+    try testing.expectEqual(@as(usize, 3), (try ix.referencesTo(a, dark.symbol)).len);
+}

@@ -97,6 +97,8 @@ const Sym = union(enum) {
     common: []const u8,
     builtin: struct { b: *const Builtin, name: []const u8 },
     comp: struct { c: *Comp, name: []const u8 },
+    /// A state or event of a `StateMachine`.
+    machine: struct { el: *const Elem, kind: index_mod.Kind, name: []const u8 },
 };
 
 /// What kind of struct a `Comp` generates.
@@ -236,6 +238,8 @@ pub const Elem = struct {
     grid_row: ?u16 = null,
     /// Position in `comp.elements`.
     index: u32 = 0,
+    /// A `StateMachine`'s states, events and transitions.
+    machine: ?*Machine = null,
 
     pub fn animation(e: *const Elem, prop: []const u8) ?[]const u8 {
         for (e.animations.items) |a| if (std.mem.eql(u8, a.prop, prop)) return a.code;
@@ -267,6 +271,169 @@ pub const Elem = struct {
         if (e.kind == .component) if (e.kind.component.children_target) |t| return t.contentHost();
         return e;
     }
+};
+
+/// A `StateMachine`'s states, events and transitions, numbered as its
+/// `zigulee.core.statemachine.Definition` numbers them.
+pub const Machine = struct {
+    events: std.ArrayList(Event) = .empty,
+    /// Every state, parents before their children (document order).
+    states: std.ArrayList(State) = .empty,
+    /// The top-level state entered first.
+    initial: u16 = 0,
+    /// All states' transitions, in order: their numbers.
+    transitions: std.ArrayList(Transition) = .empty,
+    afters: u16 = 0,
+    /// The enum of its atomic states (`state`).
+    state_enum: *const types.Enum = undefined,
+    regions: std.ArrayList(Region) = .empty,
+
+    pub fn region(m: *const Machine, prop: []const u8) ?*const Region {
+        for (m.regions.items) |*r| if (std.mem.eql(u8, r.prop, prop)) return r;
+        return null;
+    }
+
+    pub fn isAtomic(st: State) bool {
+        return st.initial == null and st.ast.kind != .parallel;
+    }
+
+    pub const Event = struct { name: []const u8, params: []const Type, decl: *const ast.EventDecl };
+    pub const State = struct {
+        ast: *const ast.MachineState,
+        parent: ?u16 = null,
+        /// A state with states inside: the one entered with it.
+        initial: ?u16 = null,
+        /// `ready.editing`: how it is named when its name alone is not
+        /// enough.
+        path: []const u8,
+        /// Atomic states: their number among them (the enum's).
+        leaf: ?u16 = null,
+    };
+    pub const Transition = struct {
+        state: u16,
+        ast: *const ast.MachineState.Transition,
+        event: ?u16 = null,
+        after: ?u16 = null,
+        /// `on done.x`: x's number.
+        done: ?u16 = null,
+        eventless: bool = false,
+        target: ?u16 = null,
+        to_history: bool = false,
+    };
+    /// A state inside a parallel state: `<name>-state` reads its atomic
+    /// state, a value of its own enum.
+    pub const Region = struct {
+        state: u16,
+        prop: []const u8,
+        state_enum: *const types.Enum,
+        /// For each atomic state of the machine, its value in the region's
+        /// enum (0 for those outside it).
+        table: []const u16,
+    };
+
+    pub fn eventIndex(m: *const Machine, name: []const u8) ?u16 {
+        for (m.events.items, 0..) |e, i| if (std.mem.eql(u8, e.name, name)) return @intCast(i);
+        return null;
+    }
+
+    /// The state with this path (`ready.editing`).
+    pub fn pathIndex(m: *const Machine, path: []const u8) ?u16 {
+        for (m.states.items, 0..) |st, i| if (std.mem.eql(u8, st.path, path)) return @intCast(i);
+        return null;
+    }
+
+    pub const Found = struct { state: u16, history: bool = false };
+    pub const NotFound = union(enum) {
+        /// No such state (the path's first `depth` parts were found).
+        missing: usize,
+        /// The name is several states'.
+        ambiguous,
+        /// `x.history` of a state keeping none.
+        no_history,
+    };
+
+    /// The state `parts` names, seen from state `from` (null: from the
+    /// top): a name, then names of states inside it, then maybe `history`.
+    /// The name is looked for among the states around `from` first (inside
+    /// its parent: one directly inside, else the one inside at any depth),
+    /// then a level further out, and so on to the whole machine.
+    pub fn find(m: *const Machine, parts: []const []const u8, from: ?u16) union(enum) { found: Found, not_found: NotFound } {
+        var at: u16 = blk: {
+            var scope: ?u16 = if (from) |f| m.states.items[f].parent else null;
+            while (true) {
+                var direct: ?u16 = null;
+                var directs: usize = 0;
+                var any: ?u16 = null;
+                var count: usize = 0;
+                for (m.states.items, 0..) |st, i| {
+                    if (!std.mem.eql(u8, st.ast.name.name, parts[0])) continue;
+                    if (!m.within(@intCast(i), scope)) continue;
+                    count += 1;
+                    any = @intCast(i);
+                    if (st.parent == scope) {
+                        directs += 1;
+                        direct = @intCast(i);
+                    }
+                }
+                if (directs == 1) break :blk direct.?;
+                if (count == 1) break :blk any.?;
+                if (count > 1) return .{ .not_found = .ambiguous };
+                const sc = scope orelse return .{ .not_found = .{ .missing = 0 } };
+                scope = m.states.items[sc].parent;
+            }
+        };
+        for (parts[1..], 1..) |part, depth| {
+            if (std.mem.eql(u8, part, "history") and depth == parts.len - 1) {
+                if (m.states.items[at].ast.history == null) return .{ .not_found = .no_history };
+                return .{ .found = .{ .state = at, .history = true } };
+            }
+            at = for (m.states.items, 0..) |st, i| {
+                if (st.parent == at and std.mem.eql(u8, st.ast.name.name, part)) break @intCast(i);
+            } else return .{ .not_found = .{ .missing = depth } };
+        }
+        return .{ .found = .{ .state = at } };
+    }
+
+    /// Whether `s` is inside `around` (anything is inside the top, null).
+    pub fn within(m: *const Machine, s: u16, around: ?u16) bool {
+        const a = around orelse return true;
+        var it = m.states.items[s].parent;
+        while (it) |p| : (it = m.states.items[p].parent) if (p == a) return true;
+        return false;
+    }
+
+    /// The names of a state written as an expression: `a` or `a.b.c`.
+    pub fn exprParts(arena: Allocator, e: *const ast.Expr) Allocator.Error!?[]const []const u8 {
+        switch (e.kind) {
+            .ident => |name| {
+                const out = try arena.alloc([]const u8, 1);
+                out[0] = name;
+                return out;
+            },
+            .member => |mb| {
+                const head = try exprParts(arena, mb.object) orelse return null;
+                const out = try arena.alloc([]const u8, head.len + 1);
+                @memcpy(out[0..head.len], head);
+                out[head.len] = mb.name.name;
+                return out;
+            },
+            else => return null,
+        }
+    }
+
+    /// The `Arg` field an event argument of type `t` travels in.
+    pub fn argField(t: Type) ?[]const u8 {
+        return switch (t) {
+            .bool => "boolean",
+            .int, .enumeration => "int",
+            .float, .length => "float",
+            .string => "string",
+            else => null,
+        };
+    }
+
+    /// Members every machine has: events cannot take their names.
+    pub const own_members = [_][]const u8{ "running", "current", "state", "active", "start", "stop" };
 };
 
 /// Where an element lives, relative to `self` of the struct being
@@ -686,6 +853,20 @@ pub const Generator = struct {
                 });
                 return;
             },
+            .machine => |ms| blk: {
+                const el = ms.el;
+                const m = el.machine orelse return;
+                const owner = if (el.ast.id) |i| i.name else "StateMachine";
+                const key = try g.print("machine:{s}:{s}:{t}:{s}", .{ el.comp.zig, el.field, ms.kind, ms.name });
+                if (ms.kind == .state) {
+                    const st = m.states.items[m.pathIndex(ms.name) orelse return];
+                    break :blk try ix.symbol(key, .{ .kind = .state, .name = st.ast.name.name, .decl = .{ .file = el.comp.file, .span = st.ast.name.span }, .detail = try g.print("state {s} ({s})", .{ ms.name, owner }) });
+                }
+                const ev = m.events.items[m.eventIndex(ms.name) orelse return];
+                var params: std.ArrayList(u8) = .empty;
+                for (ev.params, 0..) |t, k| try g.appendFmt(&params, "{s}{s}", .{ if (k > 0) ", " else "", t.name() });
+                break :blk try ix.symbol(key, .{ .kind = .event, .name = ms.name, .decl = .{ .file = el.comp.file, .span = ev.decl.name.span }, .detail = try g.print("event {s}({s}) ({s})", .{ ms.name, params.items, owner }) });
+            },
         };
         try ix.reference(g.here(span), id);
     }
@@ -1045,7 +1226,11 @@ pub const Generator = struct {
 
         c.root = try g.buildElement(c, &c.ast.root, null);
         c.is_window = c.root.kind == .builtin and c.root.kind.builtin.window;
-        if (c.is_global and c.root.children.items.len > 0) try g.diags.add(c.ast.name.span, "a global cannot contain elements", .{});
+        if (c.is_global) for (c.root.children.items) |ch| {
+            if (ch.machine != null) continue;
+            try g.diags.add(c.ast.name.span, "a global cannot contain elements (but state machines)", .{});
+            break;
+        };
         if (c.keepsSettings()) for (c.props.items) |p| if (!p.ty.keptBySettings())
             try g.diags.add(p.decl.name.span, "Settings cannot keep a {s} property", .{p.ty.name()});
         for (c.props.items) |p| g.checkFieldName(c, p.zig, p.decl.name.span) catch {};
@@ -1088,6 +1273,7 @@ pub const Generator = struct {
             if (b.window and (parent != null or c.template != .none)) return g.fail(e.type_name.span, "a Window can only be the root of a component", .{});
             elem.kind = .{ .builtin = b };
             try g.noteBuiltin(e.type_name.span, b);
+            if (std.mem.eql(u8, b.name, "StateMachine")) try g.analyzeMachine(c, elem);
         } else if (g.compFromName(e.type_name.name)) |sub| {
             if (sub.is_global) return g.fail(e.type_name.span, "'{s}' is a global, not an element", .{sub.name});
             try g.noteComp(e.type_name.span, sub);
@@ -1179,6 +1365,277 @@ pub const Generator = struct {
         return elem;
     }
 
+    /// A `StateMachine`'s events, states and transitions, checked and
+    /// numbered; the enum of its atomic states declared.
+    fn analyzeMachine(g: *Generator, c: *Comp, elem: *Elem) Error!void {
+        const m = try g.arena.create(Machine);
+        m.* = .{};
+        elem.machine = m;
+        errdefer elem.machine = null;
+        var initial: ?ast.Ident = null;
+        var top: std.ArrayList(*const ast.MachineState) = .empty;
+        for (elem.ast.members) |*mem| switch (mem.*) {
+            .event => |*e| {
+                if (m.eventIndex(e.name.name) != null) {
+                    try g.diags.add(e.name.span, "event '{s}' is declared twice", .{e.name.name});
+                    continue;
+                }
+                const taken = for (Machine.own_members) |own| {
+                    if (std.mem.eql(u8, own, e.name.name)) break true;
+                } else false;
+                if (taken) {
+                    try g.diags.add(e.name.span, "'{s}' is a member of every StateMachine: an event cannot take its name", .{e.name.name});
+                    continue;
+                }
+                var params: std.ArrayList(Type) = .empty;
+                for (e.params) |t| {
+                    const ty = g.typeFromName(t.name) orelse {
+                        try g.diags.add(t.span, "unknown type '{s}'", .{t.name});
+                        continue;
+                    };
+                    if (Machine.argField(ty) == null) {
+                        try g.diags.add(t.span, "events cannot take a {s} yet (bool, int, float, length, string or an enum)", .{ty.name()});
+                        continue;
+                    }
+                    try params.append(g.arena, ty);
+                }
+                if (e.params.len > 4) try g.diags.add(e.span, "an event takes 4 arguments at most", .{});
+                try m.events.append(g.arena, .{ .name = e.name.name, .params = params.items, .decl = e });
+                try g.noteSym(e.name.span, .{ .machine = .{ .el = elem, .kind = .event, .name = e.name.name } });
+            },
+            .machine_state => |*st| try top.append(g.arena, st),
+            .initial => |i| {
+                if (initial != null) try g.diags.add(i.span, "'initial' is given twice", .{});
+                initial = i;
+            },
+            .property, .callback, .function => {},
+            .binding, .two_way, .handler, .animate, .changed => {},
+            else => try g.diags.add(elem.ast.type_name.span, "a StateMachine holds events and states, not elements", .{}),
+        };
+        if (top.items.len == 0) return g.fail(elem.ast.type_name.span, "a StateMachine needs at least one state", .{});
+
+        // Every state, parents first; siblings' names told apart.
+        try g.addMachineStates(elem, m, top.items, null);
+        // Initial states: the one named, else the first.
+        if (initial) |i| {
+            m.initial = for (m.states.items, 0..) |st, k| {
+                if (st.parent == null and std.mem.eql(u8, st.ast.name.name, i.name)) break @intCast(k);
+            } else return g.fail(i.span, "no state '{s}' at the top of this machine", .{i.name});
+            try g.noteSym(i.span, .{ .machine = .{ .el = elem, .kind = .state, .name = m.states.items[m.initial].path } });
+        }
+        for (m.states.items, 0..) |*st, k| {
+            const children_first = for (m.states.items, 0..) |other, j| {
+                if (other.parent != null and other.parent.? == k) break @as(?u16, @intCast(j));
+            } else null;
+            if (st.ast.kind == .parallel) {
+                if (children_first == null) try g.diags.add(st.ast.name.span, "a parallel state needs states inside: its regions", .{});
+                if (st.ast.initial) |i| try g.diags.add(i.span, "a parallel state's states are all entered: it has no 'initial'", .{});
+                continue;
+            }
+            if (st.ast.initial) |i| {
+                if (children_first == null) {
+                    try g.diags.add(i.span, "'{s}' has no states inside for 'initial' to name", .{st.ast.name.name});
+                    continue;
+                }
+                st.initial = for (m.states.items, 0..) |other, j| {
+                    if (other.parent != null and other.parent.? == k and std.mem.eql(u8, other.ast.name.name, i.name)) break @intCast(j);
+                } else {
+                    try g.diags.add(i.span, "no state '{s}' inside '{s}'", .{ i.name, st.ast.name.name });
+                    continue;
+                };
+                try g.noteSym(i.span, .{ .machine = .{ .el = elem, .kind = .state, .name = m.states.items[st.initial.?].path } });
+            } else st.initial = children_first;
+            if (st.ast.history) |h| if (st.initial == null)
+                try g.diags.add(h.span, "only a state with states inside keeps a history", .{});
+        }
+        var leaves: u16 = 0;
+        for (m.states.items) |*st| if (Machine.isAtomic(st.*)) {
+            st.leaf = leaves;
+            leaves += 1;
+        };
+
+        for (m.states.items, 0..) |st, si| for (st.ast.transitions) |*t| {
+            var tr: Machine.Transition = .{ .state = @intCast(si), .ast = t };
+            switch (t.trigger) {
+                .event => |ev| {
+                    const id = m.eventIndex(ev.name.name) orelse {
+                        try g.diags.add(ev.name.span, "no event '{s}' in this machine", .{ev.name.name});
+                        continue;
+                    };
+                    const want = m.events.items[id].params.len;
+                    if (ev.params.len > want) {
+                        try g.diags.add(ev.name.span, "'{s}' has {d} argument(s)", .{ ev.name.name, want });
+                        continue;
+                    }
+                    tr.event = id;
+                    try g.noteSym(ev.name.span, .{ .machine = .{ .el = elem, .kind = .event, .name = ev.name.name } });
+                },
+                .after => {
+                    tr.after = m.afters;
+                    m.afters += 1;
+                },
+                .done => |ref| {
+                    const found = g.findState(elem, m, ref, @intCast(si)) catch continue;
+                    if (found.history or Machine.isAtomic(m.states.items[found.state])) {
+                        try g.diags.add(ref.span, "'{s}' has no states inside: it is never done", .{m.states.items[found.state].path});
+                        continue;
+                    }
+                    tr.done = found.state;
+                },
+                .eventless => tr.eventless = true,
+            }
+            if (t.target) |target| {
+                const found = g.findState(elem, m, target, @intCast(si)) catch continue;
+                tr.target = found.state;
+                tr.to_history = found.history;
+            }
+            try m.transitions.append(g.arena, tr);
+        };
+
+        // `<Id>State`, one value per atomic state: its name, or its path
+        // (`ready-editing`) where atomic states share names.
+        var name: std.ArrayList(u8) = .empty;
+        var up = true;
+        for (if (elem.ast.id) |id| id.name else "state-machine") |ch| {
+            if (ch == '-' or ch == '_') {
+                up = true;
+                continue;
+            }
+            try name.append(g.arena, if (up) std.ascii.toUpper(ch) else ch);
+            up = false;
+        }
+        try name.appendSlice(g.arena, "State");
+        m.state_enum = try g.stateEnum(c, m, name.items, null);
+
+        // Regions: `<name>-state` (its path, `a-b-state`, where regions
+        // share names) and `<Id><Name>State`.
+        for (m.states.items, 0..) |st, k| {
+            const p = st.parent orelse continue;
+            if (m.states.items[p].ast.kind != .parallel) continue;
+            var shared = false;
+            for (m.states.items) |other| {
+                const op = other.parent orelse continue;
+                if (other.ast != st.ast and m.states.items[op].ast.kind == .parallel and std.mem.eql(u8, other.ast.name.name, st.ast.name.name)) shared = true;
+            }
+            const label = if (shared) try std.mem.replaceOwned(u8, g.arena, st.path, ".", "-") else st.ast.name.name;
+            const prop = try g.print("{s}-state", .{label});
+            const clash = for (Machine.own_members) |own| {
+                if (std.mem.eql(u8, own, prop)) break true;
+            } else m.eventIndex(prop) != null;
+            if (clash) {
+                try g.diags.add(st.ast.name.span, "'{s}' would take the name of a member of this machine", .{prop});
+                continue;
+            }
+            var enum_name: std.ArrayList(u8) = .empty;
+            try enum_name.appendSlice(g.arena, name.items[0 .. name.items.len - "State".len]);
+            up = true;
+            for (label) |ch| {
+                if (ch == '-' or ch == '_') {
+                    up = true;
+                    continue;
+                }
+                try enum_name.append(g.arena, if (up) std.ascii.toUpper(ch) else ch);
+                up = false;
+            }
+            try enum_name.appendSlice(g.arena, "State");
+            const def = try g.stateEnum(c, m, enum_name.items, @intCast(k));
+            const table = try g.arena.alloc(u16, leaves);
+            @memset(table, 0);
+            var ordinal: u16 = 0;
+            for (m.states.items, 0..) |other, j| if (other.leaf) |leaf| if (j != k and g.machineInside(m, @intCast(j), @intCast(k))) {
+                table[leaf] = ordinal;
+                ordinal += 1;
+            };
+            try m.regions.append(g.arena, .{ .state = @intCast(k), .prop = prop, .state_enum = def, .table = table });
+        }
+    }
+
+    /// Whether state `s` is inside `around`.
+    fn machineInside(g: *Generator, m: *const Machine, s: u16, around: u16) bool {
+        _ = g;
+        var it = m.states.items[s].parent;
+        while (it) |p| : (it = m.states.items[p].parent) if (p == around) return true;
+        return false;
+    }
+
+    /// An enum of the atomic states (inside `within`, or all): each named
+    /// after its state, or its path with `-` where two share a name.
+    fn stateEnum(g: *Generator, c: *Comp, m: *const Machine, name: []const u8, within: ?u16) Error!*const types.Enum {
+        var values: std.ArrayList([2][]const u8) = .empty;
+        for (m.states.items, 0..) |st, k| if (st.leaf != null) {
+            if (within) |w| if (!g.machineInside(m, @intCast(k), w)) continue;
+            var shared = false;
+            for (m.states.items, 0..) |other, j| {
+                if (other.leaf == null or other.ast == st.ast) continue;
+                if (within) |w| if (!g.machineInside(m, @intCast(j), w)) continue;
+                if (std.mem.eql(u8, other.ast.name.name, st.ast.name.name)) shared = true;
+            }
+            const value = if (shared) try std.mem.replaceOwned(u8, g.arena, st.path, ".", "-") else st.ast.name.name;
+            try values.append(g.arena, .{ value, try zigName(g.arena, value) });
+        };
+        const def = try g.arena.create(types.Enum);
+        const zig = try g.uniqueZig(name, c.file);
+        def.* = .{ .name = name, .zig = try g.print("{f}", .{std.zig.fmtId(zig)}), .values = values.items };
+        try g.enums.put(g.arena, zig, def);
+        for (g.docs.items) |*d| if (d.file == c.file) {
+            const gop = try d.scope.getOrPut(g.arena, name);
+            if (!gop.found_existing) gop.value_ptr.* = .{ .enumeration = def };
+        };
+        return def;
+    }
+
+    /// Adds `list` (states of `parent`, or the top ones) and the states
+    /// inside them, parents first.
+    fn addMachineStates(g: *Generator, elem: *Elem, m: *Machine, list: []const *const ast.MachineState, parent: ?u16) Error!void {
+        for (list, 0..) |st, i| {
+            const twice = for (list[0..i]) |before| {
+                if (std.mem.eql(u8, before.name.name, st.name.name)) break true;
+            } else false;
+            if (twice) {
+                try g.diags.add(st.name.span, "state '{s}' is declared twice", .{st.name.name});
+                continue;
+            }
+            if (std.mem.eql(u8, st.name.name, "history")) {
+                try g.diags.add(st.name.span, "'history' cannot name a state: `x.history` enters x through its history", .{});
+                continue;
+            }
+            const path = if (parent) |p| try g.print("{s}.{s}", .{ m.states.items[p].path, st.name.name }) else st.name.name;
+            try m.states.append(g.arena, .{ .ast = st, .parent = parent, .path = path });
+            const index: u16 = @intCast(m.states.items.len - 1);
+            try g.noteSym(st.name.span, .{ .machine = .{ .el = elem, .kind = .state, .name = path } });
+            var children: std.ArrayList(*const ast.MachineState) = .empty;
+            for (st.children) |*child| try children.append(g.arena, child);
+            try g.addMachineStates(elem, m, children.items, index);
+        }
+    }
+
+    /// The state a target names, reported if none (or several).
+    fn findState(g: *Generator, elem: *Elem, m: *const Machine, ref: ast.StateRef, from: ?u16) Error!Machine.Found {
+        var parts: std.ArrayList([]const u8) = .empty;
+        for (ref.parts) |p| try parts.append(g.arena, p.name);
+        return g.findStateParts(elem, m, parts.items, ref.span, from);
+    }
+
+    fn findStateParts(g: *Generator, elem: *Elem, m: *const Machine, parts: []const []const u8, span: Span, from: ?u16) Error!Machine.Found {
+        const written = try std.mem.join(g.arena, ".", parts);
+        switch (m.find(parts, from)) {
+            .found => |f| {
+                try g.noteSym(span, .{ .machine = .{ .el = elem, .kind = .state, .name = m.states.items[f.state].path } });
+                return f;
+            },
+            .not_found => |nf| switch (nf) {
+                .missing => return g.fail(span, "no state '{s}' in this machine", .{written}),
+                .ambiguous => {
+                    var paths: std.ArrayList(u8) = .empty;
+                    for (m.states.items) |st| if (std.mem.eql(u8, st.ast.name.name, parts[0]))
+                        try g.appendFmt(&paths, "{s}{s}", .{ if (paths.items.len > 0) ", " else "", st.path });
+                    return g.fail(span, "'{s}' names several states: write its path ({s})", .{ parts[0], paths.items });
+                },
+                .no_history => return g.fail(span, "'{s}' keeps no history: add `history;` to it", .{try std.mem.join(g.arena, ".", parts[0 .. parts.len - 1])}),
+            },
+        }
+    }
+
     fn registerId(g: *Generator, c: *Comp, id: ast.Ident, field: []const u8, elem: *Elem) Error!void {
         if (std.mem.eql(u8, id.name, "root") or std.mem.eql(u8, id.name, "self") or std.mem.eql(u8, id.name, "parent"))
             return g.fail(id.span, "'{s}' cannot be used as an id", .{id.name});
@@ -1266,6 +1723,8 @@ pub const Generator = struct {
 
     /// How to reach `el` from the struct of `from`: `_parent.` per level.
     fn locFrom(g: *Generator, from: *const Comp, el: *const Elem) Allocator.Error!Loc {
+        // A global's (state machine), through its accessor.
+        if (el.comp.is_global and from != el.comp) return .{ .prefix = try g.print("_g_{s}().", .{try zigName(g.arena, el.comp.zig)}), .field = el.field };
         var prefix: std.ArrayList(u8) = .empty;
         var c: ?*const Comp = from;
         while (c) |it| : (c = it.outer) {
@@ -1394,6 +1853,32 @@ pub const Generator = struct {
                     if (own) |o| o.accessible = true;
                     return .{ .callback = .{ .path = try g.print("{s}_a_{s}.{s}", .{ loc.prefix, loc.field, cb.zig }), .params = cb.params, .ret = cb.ret, .sym = .{ .common = cb.name } } };
                 };
+                if (elem.machine) |m| {
+                    if (m.eventIndex(name)) |i| return .{ .function = .{
+                        .prefix = try g.print("self.{s}", .{loc.prefix}),
+                        .method = try g.eventMethod(elem, name),
+                        .params = m.events.items[i].params,
+                        .sym = .{ .machine = .{ .el = elem, .kind = .event, .name = name } },
+                    } };
+                    if (std.mem.eql(u8, name, "state")) return .{ .property = .{
+                        .path = try g.print("{s}.last", .{base}),
+                        .ty = .{ .enumeration = m.state_enum },
+                        .read = try g.print("@as({s}, @enumFromInt(self.{s}.last.get()))", .{ m.state_enum.zig, base }),
+                        .read_only = true,
+                        .read_only_reason = "the machine sets it",
+                    } };
+                    if (m.region(name)) |r| {
+                        var table: std.ArrayList(u8) = .empty;
+                        for (r.table, 0..) |v, k| try g.appendFmt(&table, "{s}{d}", .{ if (k > 0) ", " else "", v });
+                        return .{ .property = .{
+                            .path = try g.print("{s}.changes", .{base}),
+                            .ty = .{ .enumeration = r.state_enum },
+                            .read = try g.print("@as({s}, @enumFromInt(([_]u16{{ {s} }})[@intCast(self.{s}.lastIn({d}))]))", .{ r.state_enum.zig, table.items, base, r.state }),
+                            .read_only = true,
+                            .read_only_reason = "the machine sets it",
+                        } };
+                    }
+                }
                 if (b.prop(name)) |p| {
                     var path: []const u8 = undefined;
                     if (p.zig[0] == '@') {
@@ -1695,6 +2180,7 @@ pub const Generator = struct {
                             if (!f.public) return g.fail(m.name.span, "'{s}' is private to {s}", .{ m.name.name, gc.name });
                             return .{ .function = .{ .prefix = try g.print("self.{s}.", .{accessor}), .method = f.method, .params = f.params, .ret = f.ret } };
                         }
+                        if (gc.ids.get(try zigName(g.arena, m.name.name))) |el| if (el.machine != null) return .{ .element = el };
                         return g.fail(m.name.span, "{s} has no property or callback '{s}'", .{ gc.name, m.name.name });
                     },
                     .key_namespace => {
@@ -2416,6 +2902,18 @@ pub const Generator = struct {
             const v = try g.compileExpr(ctx, args[0], .float);
             return .{ .code = try g.print("zigulee.Easing{{ .spring = {s} }}", .{v.code}), .ty = .easing, .constant = v.constant };
         }
+        // `machine.active(state)`: the state's name, not an expression.
+        if (callee.kind == .member and std.mem.eql(u8, callee.kind.member.name.name, "active")) {
+            const obj = try g.compileRef(ctx, callee.kind.member.object);
+            if (obj == .element) if (obj.element.machine) |m| {
+                const parts = (if (args.len == 1) try Machine.exprParts(g.arena, args[0]) else null) orelse
+                    return g.fail(span, "active takes a state's name or path: active(name), active(a.b)", .{});
+                const found = try g.findStateParts(obj.element, m, parts, args[0].span, null);
+                if (found.history) return g.fail(args[0].span, "a history is not a state: active() takes the state", .{});
+                const loc = try g.locFrom(ctx.c, obj.element);
+                return .{ .code = try g.print("self.{s}{s}.isActive({d})", .{ loc.prefix, loc.field, found.state }), .ty = .bool };
+            };
+        }
         const ref = try g.compileRef(ctx, callee);
         switch (ref) {
             .callback => |cb| {
@@ -2824,6 +3322,10 @@ pub const Generator = struct {
 
         try g.emitStates(iw, fw, c, &fields);
         try g.emitChanged(iw, dw, fw, c, &fields);
+        for (c.elements.items) |el| if (el.machine != null) g.emitMachine(iw, c, el, &fields) catch |err| switch (err) {
+            error.CompileError => {},
+            else => return err,
+        };
         for (c.functions.items) |*f| g.emitFunction(c, f, &fields) catch |err| switch (err) {
             error.CompileError => {},
             else => return err,
@@ -2893,7 +3395,7 @@ pub const Generator = struct {
             }
         };
         if (c.is_global) {
-            try g.assembleGlobal(out, c, &fields, ensure.items, init_w.written(), extra_fields.written());
+            try g.assembleGlobal(out, c, &fields, ensure.items, try std.mem.concat(g.arena, u8, &.{ init_w.written(), fields.connects.items }), extra_fields.written());
             return;
         }
         const pub_kw = if (c.template == .none) "pub " else "";
@@ -3129,6 +3631,7 @@ pub const Generator = struct {
             }
             try W.p(out, "    {s}: zigulee.Callback(fn ({s}) {s}) = .{{}},\n", .{ cb.zig, params.items, cb.ret.zig() });
         }
+        for (c.elements.items) |el| if (el.machine != null) try W.p(out, "    {s}: zigulee.core.statemachine.StateMachine = .{{}},\n", .{el.field});
         try W.p(out, "{s}{s}", .{ extra, fields.expr_fields.items });
         for (0..fields.string_buffers) |k| try W.p(out, "    _s{d}: zigulee.core.StringBuffer = .{{}},\n", .{k});
         if (fields.statics.items.len > 0) try W.p(out, "\n{s}", .{fields.statics.items});
@@ -3165,8 +3668,12 @@ pub const Generator = struct {
         , .{});
         // `self` only when something is freed (a global of callbacks has
         // nothing).
-        if (fields.expr_deinit.items.len > 0 or fields.string_buffers > 0 or c.props.items.len > 0)
+        const machines = for (c.elements.items) |el| {
+            if (el.machine != null) break true;
+        } else false;
+        if (fields.expr_deinit.items.len > 0 or fields.string_buffers > 0 or c.props.items.len > 0 or machines)
             try W.p(out, "        const self = &instance;\n", .{});
+        for (c.elements.items) |el| if (el.machine != null) try W.p(out, "        self.{s}.deinit();\n", .{el.field});
         try W.p(out, "{s}", .{fields.expr_deinit.items});
         for (0..fields.string_buffers) |k| try W.p(out, "        self._s{d}.deinit(self._gpa);\n", .{k});
         for (c.props.items) |p| try W.p(out, "        self.{s}.deinit();\n", .{p.zig});
@@ -3791,6 +4298,173 @@ pub const Generator = struct {
         return e;
     }
 
+    /// A `StateMachine`: its `Definition`, the hooks running what its
+    /// source says (guards, actions, entry and exit actions, delays), a
+    /// `send_<id>_<event>` method per event; set up in `init`, started at
+    /// its end.
+    fn emitMachine(g: *Generator, iw: *Writer, c: *Comp, el: *Elem, fields: *Fields) Error!void {
+        const m = el.machine.?;
+        const sm = "zigulee.core.statemachine";
+        const name = try g.print("_m_{s}", .{el.field});
+
+        // The definition.
+        var def: std.ArrayList(u8) = .empty;
+        try g.appendFmt(&def, "    const {s}_def: {s}.Definition = .{{\n        .states = &.{{\n", .{ name, sm });
+        for (m.states.items, 0..) |st, si| {
+            const slashed = try std.mem.replaceOwned(u8, g.arena, st.path, ".", "/");
+            try g.appendFmt(&def, "            .{{ .name = \"{f}\", .path = \"{f}\"", .{ std.zig.fmtString(st.ast.name.name), std.zig.fmtString(slashed) });
+            if (st.parent) |p| try g.appendFmt(&def, ", .parent = {d}", .{p});
+            if (st.initial) |i| try g.appendFmt(&def, ", .initial = {d}", .{i});
+            if (st.ast.history) |h| try g.appendFmt(&def, ", .history = .{s}", .{if (h.deep) "deep" else "shallow"});
+            if (st.ast.kind == .parallel) try g.appendFmt(&def, ", .parallel = true", .{});
+            if (st.ast.kind == .final) try g.appendFmt(&def, ", .final = true", .{});
+            try g.appendFmt(&def, ", .transitions = &.{{", .{});
+            var any = false;
+            for (m.transitions.items, 0..) |t, ti| if (t.state == si) {
+                any = true;
+                const trigger = if (t.event) |e|
+                    try g.print(".{{ .event = {d} }}", .{e})
+                else if (t.after) |a|
+                    try g.print(".{{ .after = {d} }}", .{a})
+                else if (t.done) |d|
+                    try g.print(".{{ .done = {d} }}", .{d})
+                else
+                    ".eventless";
+                const target = if (t.target) |to| try g.print("{d}", .{to}) else "null";
+                try g.appendFmt(&def, "\n                .{{ .trigger = {s}, .target = {s}, .to_history = {}, .index = {d}, .guarded = {} }},", .{ trigger, target, t.to_history, ti, t.ast.guard != null });
+            };
+            try g.appendFmt(&def, "{s}}} }},\n", .{if (any) "\n            " else ""});
+        }
+        try g.appendFmt(&def, "        }},\n        .events = &.{{", .{});
+        for (m.events.items, 0..) |e, i| try g.appendFmt(&def, "{s}\"{f}\"", .{ if (i > 0) ", " else " ", std.zig.fmtString(e.name) });
+        try g.appendFmt(&def, " }},\n        .initial = {d},\n        .afters = {d},\n    }};\n", .{ m.initial, m.afters });
+        try fields.statics.appendSlice(g.arena, def.items);
+
+        // Code written in a state: unqualified names are the machine's,
+        // then the component's, as in a handler on it.
+        const Prong = struct { key: usize, code: []const u8 };
+        var guards: std.ArrayList(Prong) = .empty;
+        var actions: std.ArrayList(Prong) = .empty;
+        var entered: std.ArrayList(Prong) = .empty;
+        var exited: std.ArrayList(Prong) = .empty;
+        var delays: std.ArrayList(Prong) = .empty;
+        var failed = false;
+        for (m.transitions.items, 0..) |t, ti| {
+            var ctx = try g.context(c, el, fields);
+            // The event's arguments, by the names the transition gives them.
+            var locals: std.ArrayList(Local) = .empty;
+            try locals.appendSlice(g.arena, ctx.locals);
+            var unpack: std.ArrayList(Local) = .empty;
+            if (t.event) |e| for (t.ast.trigger.event.params, 0..) |param, k| {
+                const ty = m.events.items[e].params[k];
+                const zig = try g.print("arg_{s}", .{try zigName(g.arena, param.name)});
+                const local: Local = .{ .name = param.name, .zig = try g.print("{s}{d}", .{ zig, k }), .ty = ty };
+                try locals.append(g.arena, local);
+                try unpack.append(g.arena, local);
+            };
+            ctx.locals = locals.items;
+            if (t.ast.guard) |guard| {
+                const v = g.compileExpr(&ctx, guard, .bool) catch {
+                    failed = true;
+                    continue;
+                };
+                try guards.append(g.arena, .{ .key = ti, .code = try g.unpackArgs(unpack.items, try g.print("return {s};", .{v.code})) });
+            }
+            if (t.ast.actions.len > 0) {
+                var body: Writer.Allocating = .init(g.arena);
+                g.compileStmts(&ctx, t.ast.actions, &body.writer, 4) catch {
+                    failed = true;
+                    continue;
+                };
+                try actions.append(g.arena, .{ .key = ti, .code = try g.unpackArgs(unpack.items, body.written()) });
+            }
+            if (t.after) |a| {
+                var plain = try g.context(c, el, fields);
+                const v = g.compileExpr(&plain, t.ast.trigger.after, .duration) catch {
+                    failed = true;
+                    continue;
+                };
+                try delays.append(g.arena, .{ .key = a, .code = try g.print("                return {s};\n", .{v.code}) });
+            }
+        }
+        for (m.states.items, 0..) |st, si| for ([_]?[]ast.Stmt{ st.ast.entered, st.ast.exited }, [_]*std.ArrayList(Prong){ &entered, &exited }) |stmts, list| {
+            var ctx = try g.context(c, el, fields);
+            var body: Writer.Allocating = .init(g.arena);
+            g.compileStmts(&ctx, stmts orelse continue, &body.writer, 4) catch {
+                failed = true;
+                continue;
+            };
+            try list.append(g.arena, .{ .key = si, .code = body.written() });
+        };
+        if (failed) return error.CompileError;
+
+        // The hooks: a switch over the transition, state or `after`.
+        const Hook = struct { field: []const u8, prongs: []const Prong, params: []const u8, ret: []const u8, default: []const u8, on: []const u8 };
+        const args_param = try g.print("args: []const {s}.Arg", .{sm});
+        const hooks = [_]Hook{
+            .{ .field = "guard", .prongs = guards.items, .params = try g.print("t: u16, {s}", .{args_param}), .ret = "bool", .default = "return true", .on = "t" },
+            .{ .field = "action", .prongs = actions.items, .params = try g.print("t: u16, {s}", .{args_param}), .ret = "void", .default = "{}", .on = "t" },
+            .{ .field = "entered", .prongs = entered.items, .params = "s: u16", .ret = "void", .default = "{}", .on = "s" },
+            .{ .field = "exited", .prongs = exited.items, .params = "s: u16", .ret = "void", .default = "{}", .on = "s" },
+            .{ .field = "delay", .prongs = delays.items, .params = "a: u16", .ret = "i64", .default = "return 0", .on = "a" },
+        };
+        var setup: std.ArrayList(u8) = .empty;
+        try g.appendFmt(&setup, "try self.{s}.setup(&{s}_def, .{{ .ctx = self", .{ el.field, name });
+        for (hooks) |h| {
+            if (h.prongs.len == 0) continue;
+            var body: std.ArrayList(u8) = .empty;
+            for (h.prongs) |pr| try g.appendFmt(&body, "            {d} => {{\n{s}            }},\n", .{ pr.key, pr.code });
+            const fn_name = try g.print("{s}_{s}", .{ name, h.field });
+            try g.appendFmt(&fields.functions, "    fn {s}(ctx: *anyopaque, {s}) {s} {{\n", .{ fn_name, h.params, h.ret });
+            if (usesIdent(body.items, "self"))
+                try g.appendFmt(&fields.functions, "        const self: *Self = @ptrCast(@alignCast(ctx));\n", .{})
+            else
+                try g.appendFmt(&fields.functions, "        _ = ctx;\n", .{});
+            if (std.mem.indexOf(u8, h.params, "args") != null and !usesIdent(body.items, "args"))
+                try g.appendFmt(&fields.functions, "        _ = args;\n", .{});
+            try g.appendFmt(&fields.functions, "        switch ({s}) {{\n{s}            else => {s},\n        }}\n    }}\n\n", .{ h.on, body.items, h.default });
+            try g.appendFmt(&setup, ", .{s} = {s}", .{ h.field, fn_name });
+        }
+        try line(iw, 2, "{s} }});", .{setup.items});
+
+        // Sending an event: calling it (from `.zge`, or Zig).
+        for (m.events.items, 0..) |e, i| {
+            var sig: std.ArrayList(u8) = .empty;
+            var packed_args: std.ArrayList(u8) = .empty;
+            for (e.params, 0..) |t, k| {
+                try g.appendFmt(&sig, ", a{d}: {s}", .{ k, t.zig() });
+                const value = if (t == .enumeration) try g.print("@intFromEnum(a{d})", .{k}) else try g.print("a{d}", .{k});
+                try g.appendFmt(&packed_args, "{s}.{{ .{s} = {s} }}", .{ if (k > 0) ", " else " ", Machine.argField(t).?, value });
+            }
+            try g.appendFmt(&fields.functions, "    /// Sends `{s}` to `{s}`.\n    pub fn {s}(self: *Self{s}) void {{\n        self.{s}.sendEvent({d}, &.{{{s}{s}}});\n    }}\n\n", .{
+                e.name, if (el.ast.id) |id| id.name else el.field, try g.eventMethod(el, e.name), sig.items, el.field, i, packed_args.items, if (packed_args.items.len > 0) " " else "",
+            });
+        }
+        // Started once everything is set up.
+        try g.appendFmt(&fields.connects, "        self.{s}.begin();\n", .{el.field});
+    }
+
+    /// The method sending event `event` of machine `el`.
+    fn eventMethod(g: *Generator, el: *const Elem, event: []const u8) Allocator.Error![]const u8 {
+        return g.print("send_{s}_{s}", .{ el.field, try zigName(g.arena, event) });
+    }
+
+    /// `code` (a hook's prong) with the event's arguments it uses read
+    /// from `args` first.
+    fn unpackArgs(g: *Generator, locals: []const Local, code: []const u8) Allocator.Error![]const u8 {
+        var out: std.ArrayList(u8) = .empty;
+        for (locals, 0..) |l, k| {
+            if (!usesIdent(code, l.zig)) continue;
+            const field = Machine.argField(l.ty).?;
+            const read = if (l.ty == .enumeration) try g.print("@enumFromInt(args[{d}].int)", .{k}) else try g.print("args[{d}].{s}", .{ k, field });
+            try g.appendFmt(&out, "                const {s}: {s} = {s};\n", .{ l.zig, l.ty.zig(), read });
+        }
+        if (std.mem.startsWith(u8, code, "return ")) {
+            try g.appendFmt(&out, "                {s}\n", .{code});
+        } else try out.appendSlice(g.arena, code);
+        return out.items;
+    }
+
     fn emitHandler(g: *Generator, iw: *Writer, c: *Comp, el: *Elem, h: *const ast.Handler, fields: *Fields) Error!void {
         if (h.target != null or isConnections(el)) return g.emitConnection(c, el, h, fields);
         const member = try g.memberFrom(c, el, h.name.name, h.name.span) orelse
@@ -3838,6 +4512,12 @@ fn assignsOrLinks(members: []const ast.Member, name: []const u8) bool {
         .handler => |h| if (stmtsAssign(h.body, name)) return true,
         .function => |f| if (stmtsAssign(f.body, name)) return true,
         .changed => |c| if (stmtsAssign(c.body, name)) return true,
+        .child => |el| if (assignsOrLinks(el.members, name)) return true,
+        .machine_state => |st| {
+            if (st.entered) |b| if (stmtsAssign(b, name)) return true;
+            if (st.exited) |b| if (stmtsAssign(b, name)) return true;
+            for (st.transitions) |t| if (stmtsAssign(t.actions, name)) return true;
+        },
         else => {},
     };
     return false;

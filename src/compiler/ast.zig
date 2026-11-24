@@ -92,6 +92,63 @@ pub const Member = union(enum) {
     /// `@children`: in a component, where the children of its uses go.
     children_placeholder: Span,
     function: FunctionDecl,
+    /// In a `StateMachine`: `event name(types);`
+    event: EventDecl,
+    /// In a `StateMachine`: `initial name;`
+    initial: Ident,
+    /// In a `StateMachine`: `state name { ... }`
+    machine_state: MachineState,
+};
+
+/// `event name(int, string);`: an event of a state machine, sent by calling
+/// it.
+pub const EventDecl = struct {
+    name: Ident,
+    params: []Ident,
+    span: Span,
+};
+
+/// `state name { entered => { } exited => { } on ... after ... }`, with
+/// states inside it too; `parallel name { ... }`, whose states are all
+/// active together; `final name;`.
+pub const MachineState = struct {
+    kind: enum { state, parallel, final } = .state,
+    name: Ident,
+    entered: ?[]Stmt = null,
+    exited: ?[]Stmt = null,
+    transitions: []Transition,
+    /// The states inside it, and `initial name;` (else its first one).
+    children: []MachineState = &.{},
+    initial: ?Ident = null,
+    /// `history;` or `history deep;`.
+    history: ?struct { deep: bool, span: Span } = null,
+    span: Span,
+
+    /// `on event(params) when guard => target { actions }`, or `after
+    /// duration ...`; each part after the trigger optional.
+    pub const Transition = struct {
+        trigger: union(enum) {
+            event: struct { name: Ident, params: []Ident },
+            after: *Expr,
+            /// `on done.x`: x reached its final state (all its regions,
+            /// for a parallel state).
+            done: StateRef,
+            /// `when guard => ...`: taken as soon as the guard holds.
+            eventless,
+        },
+        guard: ?*Expr,
+        /// None: internal (no state left or entered).
+        target: ?StateRef,
+        actions: []Stmt,
+        span: Span,
+    };
+};
+
+/// A state named by its name or its path, `ready.editing`, or entered
+/// through its history, `ready.history`.
+pub const StateRef = struct {
+    parts: []Ident,
+    span: Span,
 };
 
 pub const States = struct {

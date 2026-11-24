@@ -840,3 +840,387 @@ test "open-url: links handed to the system's opener" {
     try testing.expectEqual(@as(usize, 19), Fake.len);
     try testing.expect(!app.property("opened").?.get().bool);
 }
+
+test "state machines: events, guards, entry and exit actions, after, its own events; one in a global" {
+    const prog = try load(
+        \\export global Session {
+        \\    var out <string> user;
+        \\    machine := StateMachine {
+        \\        event sign-in(string);
+        \\        state out { on sign-in(name) => in { user = name; } }
+        \\        state in { after 100ms => out { user = ""; } }
+        \\    }
+        \\}
+        \\enum Why { none, refused }
+        \\export component App inherits Window {
+        \\    var out <string> log;
+        \\    var out <Why> why;
+        \\    var out <bool> busy: m.active(loading);
+        \\    var out <bool> signed: Session.machine.active(in);
+        \\    m := StateMachine {
+        \\        event go;
+        \\        event done(bool, Why);
+        \\        event ping(int);
+        \\        state idle {
+        \\            exited => { log += "-idle "; }
+        \\            on go => loading { log += "go "; }
+        \\        }
+        \\        state loading {
+        \\            entered => { log += "+loading "; }
+        \\            on done(ok, w) when ok => ready;
+        \\            on done(ok, w) => idle { why = w; }
+        \\            after 50ms => idle;
+        \\        }
+        \\        state ready {
+        \\            entered => { m.ping(7); log += "+ready "; }
+        \\            on ping(n) { log += "ping\{n} "; }
+        \\        }
+        \\    }
+        \\    public function go() { m.go(); }
+        \\    public function done(ok: bool) { m.done(ok, Why.refused); }
+        \\    public function ready() -> bool { return m.state == ready; }
+        \\    public function sign-in() { Session.machine.sign-in("ada"); }
+        \\}
+    );
+    defer prog.destroy();
+    const app = try prog.create(prog.mainComponent().?);
+    defer app.destroy();
+    var t = zigulee.core.now();
+
+    _ = app.call("go", &.{}, gpa);
+    try testing.expectEqualStrings("-idle go +loading ", app.property("log").?.get().string);
+    try testing.expect(app.property("busy").?.get().bool);
+    _ = app.call("done", &.{.{ .bool = false }}, gpa);
+    try testing.expectEqualStrings("refused", app.property("why").?.get().enumeration.def.values[app.property("why").?.get().enumeration.index][0]);
+    try testing.expect(!app.property("busy").?.get().bool);
+    // After 50 ms in `loading`: back to idle.
+    _ = app.call("go", &.{}, gpa);
+    t += 60;
+    zigulee.updateTimersAndAnimations(t);
+    try testing.expect(!app.property("busy").?.get().bool);
+    // Its own event, after the entry action.
+    _ = app.call("go", &.{}, gpa);
+    app.property("log").?.set(.{ .string = "" });
+    _ = app.call("done", &.{.{ .bool = true }}, gpa);
+    try testing.expectEqualStrings("+ready ping7 ", app.property("log").?.get().string);
+    try testing.expect(app.call("ready", &.{}, gpa).?.bool);
+
+    // The global's.
+    try testing.expect(!app.property("signed").?.get().bool);
+    _ = app.call("sign-in", &.{}, gpa);
+    try testing.expect(app.property("signed").?.get().bool);
+    const session = (try prog.globalNamed("Session")).?;
+    try testing.expectEqualStrings("ada", session.property("user").?.get().string);
+    t += 150;
+    zigulee.updateTimersAndAnimations(t);
+    try testing.expect(!app.property("signed").?.get().bool);
+    try testing.expectEqualStrings("", session.property("user").?.get().string);
+}
+
+test "state machines with states inside states: the parent's transitions, history, paths in active()" {
+    const prog = try load(
+        \\export component App inherits Window {
+        \\    var out <string> log;
+        \\    var out <bool> editing: m.active(doc.edit);
+        \\    var out <bool> in-doc: m.active(doc);
+        \\    m := StateMachine {
+        \\        event open;
+        \\        event close;
+        \\        event edit;
+        \\        event save;
+        \\        state home { on open => doc.history; }
+        \\        state doc {
+        \\            history;
+        \\            entered => { log += "+doc "; }
+        \\            exited => { log += "-doc "; }
+        \\            on close => home;
+        \\            after 1s => home;
+        \\            state view {
+        \\                exited => { log += "-view "; }
+        \\                on edit => edit;
+        \\            }
+        \\            state edit {
+        \\                entered => { log += "+edit "; }
+        \\                on save => view;
+        \\            }
+        \\        }
+        \\    }
+        \\    public function send(what: string) {
+        \\        if what == "open" { m.open(); }
+        \\        if what == "close" { m.close(); }
+        \\        if what == "edit" { m.edit(); }
+        \\        if what == "save" { m.save(); }
+        \\    }
+        \\}
+    );
+    defer prog.destroy();
+    const app = try prog.create(prog.mainComponent().?);
+    defer app.destroy();
+    var t = zigulee.core.now();
+    const send = struct {
+        fn f(a: *interpreter.Instance, what: []const u8) void {
+            _ = a.call("send", &.{.{ .string = what }}, gpa);
+        }
+    }.f;
+
+    send(app, "open");
+    try testing.expect(app.property("in-doc").?.get().bool and !app.property("editing").?.get().bool);
+    send(app, "edit");
+    try testing.expect(app.property("editing").?.get().bool);
+    try testing.expectEqualStrings("+doc -view +edit ", app.property("log").?.get().string);
+    // Closed from inside, opened back where it was.
+    send(app, "close");
+    try testing.expect(!app.property("in-doc").?.get().bool);
+    send(app, "open");
+    try testing.expect(app.property("editing").?.get().bool);
+    try testing.expectEqualStrings("+doc -view +edit -doc +doc +edit ", app.property("log").?.get().string);
+    // The parent's after.
+    t += 1100;
+    zigulee.updateTimersAndAnimations(t);
+    try testing.expect(!app.property("in-doc").?.get().bool);
+}
+
+test "state machines: parallel regions, final states and done, eventless transitions" {
+    const prog = try load(
+        \\export component App inherits Window {
+        \\    var in-out <bool> go;
+        \\    var out <string> log;
+        \\    var out <bool> both: m.active(lamp.on) && m.active(fan.on);
+        \\    m := StateMachine {
+        \\        event switch;
+        \\        event stop-fan;
+        \\        event poke;
+        \\        state wait { when go => run; }
+        \\        parallel run {
+        \\            on done.run => over { log += "over "; }
+        \\            state lamp {
+        \\                state off { on switch => on; }
+        \\                state on { on switch => out; }
+        \\                final out;
+        \\            }
+        \\            state fan {
+        \\                on done.fan { log += "fan-done "; }
+        \\                state on { on stop-fan => out; }
+        \\                final out;
+        \\            }
+        \\        }
+        \\        final over;
+        \\    }
+        \\    public function send(what: string) {
+        \\        if what == "switch" { m.switch(); }
+        \\        if what == "stop-fan" { m.stop-fan(); }
+        \\        if what == "poke" { m.poke(); }
+        \\    }
+        \\    public function lamp() -> bool { return m.lamp-state == on; }
+        \\}
+    );
+    defer prog.destroy();
+    const app = try prog.create(prog.mainComponent().?);
+    defer app.destroy();
+    const send = struct {
+        fn f(a: *interpreter.Instance, what: []const u8) void {
+            _ = a.call("send", &.{.{ .string = what }}, gpa);
+        }
+    }.f;
+
+    app.property("go").?.set(.{ .bool = true });
+    send(app, "poke");
+    try testing.expect(!app.property("both").?.get().bool);
+    send(app, "switch");
+    try testing.expect(app.property("both").?.get().bool);
+    try testing.expect(app.call("lamp", &.{}, gpa).?.bool);
+    send(app, "stop-fan");
+    try testing.expectEqualStrings("fan-done ", app.property("log").?.get().string);
+    send(app, "switch");
+    try testing.expectEqualStrings("fan-done over ", app.property("log").?.get().string);
+}
+
+// ---- SCXML converted and run (`zgec scxml`) ----
+
+const scxml = @import("../compiler/scxml.zig");
+
+/// `doc` converted, with `harness` (a component using the global) after
+/// it, loaded; it must convert without warnings when `quiet`.
+fn loadScxml(doc: []const u8, harness: []const u8, quiet: bool) !*Program {
+    var arena: std.heap.ArenaAllocator = .init(gpa);
+    defer arena.deinit();
+    const z = switch (try scxml.convert(arena.allocator(), "test.scxml", doc)) {
+        .zge => |z| z,
+        .errors => |e| {
+            std.debug.print("{s}\n", .{e});
+            return error.TestUnexpectedResult;
+        },
+    };
+    if (quiet and z.warnings.len > 0) {
+        for (z.warnings) |w| std.debug.print("warning: {d}: {s}\n", .{ w.line, w.message });
+        return error.TestUnexpectedResult;
+    }
+    const source = try std.mem.concat(arena.allocator(), u8, &.{ z.text, "\n", harness });
+    return switch (try Program.load(gpa, "converted.zge", source, .{})) {
+        .program => |p| p,
+        .errors => |e| {
+            defer gpa.free(e);
+            std.debug.print("{s}\n--- source:\n{s}\n", .{ e, source });
+            return error.TestUnexpectedResult;
+        },
+    };
+}
+
+/// The harness of the conformance tests: where the machine is, and a
+/// function sending `name` (the events listed).
+fn harnessFor(comptime events: []const []const u8) []const u8 {
+    comptime var sends: []const u8 = "";
+    inline for (events) |e| sends = sends ++ "        if name == \"" ++ e ++ "\" { Test.machine." ++ e ++ "(); }\n";
+    return "export component Harness inherits Window {\n    var out <string> at: Test.machine.current;\n    public function send(name: string) {\n" ++ sends ++ "    }\n}\n";
+}
+
+/// Runs a conformance test: converted, started, `events` sent in order;
+/// it must end in its final state `pass`.
+fn expectPass(doc: []const u8, comptime events: []const []const u8) !void {
+    const prog = try loadScxml(doc, comptime harnessFor(events), false);
+    defer prog.destroy();
+    const app = try prog.create(prog.component("Harness").?);
+    defer app.destroy();
+    inline for (events) |e| _ = app.call("send", &.{.{ .string = e }}, gpa);
+    const at = app.property("at").?.get().string;
+    if (!std.mem.eql(u8, at, "pass")) {
+        std.debug.print("ended in '{s}', not 'pass'\n", .{at});
+        return error.TestUnexpectedResult;
+    }
+}
+
+test "SCXML conformance: the first enabled transition in document order; a child's before its parent's" {
+    try expectPass(
+        \\<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" name="test">
+        \\  <state id="s0">
+        \\    <transition event="e" target="fail"/>
+        \\    <state id="s01">
+        \\      <transition event="e" cond="false" target="fail"/>
+        \\      <transition event="e" target="s02"/>
+        \\      <transition event="e" target="fail"/>
+        \\    </state>
+        \\    <state id="s02">
+        \\      <transition cond="true" target="pass"/>
+        \\      <transition target="fail"/>
+        \\    </state>
+        \\  </state>
+        \\  <final id="pass"/>
+        \\  <final id="fail"/>
+        \\</scxml>
+    , &.{"e"});
+}
+
+test "SCXML conformance: raised events in order, before the next external one" {
+    try expectPass(
+        \\<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" name="test">
+        \\  <state id="s0">
+        \\    <onentry><raise event="e1"/><raise event="e2"/></onentry>
+        \\    <transition event="e1" target="s1"/>
+        \\    <transition event="ext" target="fail"/>
+        \\  </state>
+        \\  <state id="s1">
+        \\    <transition event="e2" target="s2"/>
+        \\    <transition event="ext" target="fail"/>
+        \\  </state>
+        \\  <state id="s2">
+        \\    <onentry><raise event="e3"/></onentry>
+        \\    <transition event="ext" target="fail"/>
+        \\    <transition event="e3" target="s3"/>
+        \\  </state>
+        \\  <state id="s3"><transition event="ext" target="pass"/></state>
+        \\  <final id="pass"/>
+        \\  <final id="fail"/>
+        \\</scxml>
+    , &.{"ext"});
+}
+
+test "SCXML conformance: done.state of a compound state, and of a parallel state once all its regions are" {
+    try expectPass(
+        \\<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" name="test">
+        \\  <state id="s0">
+        \\    <transition event="done.state.s0" target="p"/>
+        \\    <state id="s01"><transition event="go" target="s0final"/></state>
+        \\    <final id="s0final"/>
+        \\  </state>
+        \\  <parallel id="p">
+        \\    <transition event="done.state.p" target="pass"/>
+        \\    <state id="r1">
+        \\      <state id="r1a"><transition event="a" target="r1end"/></state>
+        \\      <final id="r1end"/>
+        \\    </state>
+        \\    <state id="r2">
+        \\      <state id="r2a"><transition event="b" target="r2end"/></state>
+        \\      <final id="r2end"/>
+        \\    </state>
+        \\  </parallel>
+        \\  <final id="pass"/>
+        \\</scxml>
+    , &.{ "go", "a", "b" });
+}
+
+test "SCXML conformance: shallow history resumes the last active state" {
+    try expectPass(
+        \\<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" name="test">
+        \\  <state id="s0" initial="s01">
+        \\    <history id="h0"><transition target="s01"/></history>
+        \\    <transition event="leave" target="out"/>
+        \\    <state id="s01"><transition event="next" target="s02"/></state>
+        \\    <state id="s02"><transition event="check" target="pass"/></state>
+        \\  </state>
+        \\  <state id="out"><transition event="back" target="h0"/></state>
+        \\  <final id="pass"/>
+        \\</scxml>
+    , &.{ "next", "leave", "back", "check" });
+}
+
+test "SCXML conformance: In() and the data model, assign and if/elseif/else" {
+    try expectPass(
+        \\<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" name="test" initial="p">
+        \\  <datamodel><data id="x" expr="1"/></datamodel>
+        \\  <parallel id="p">
+        \\    <state id="a">
+        \\      <state id="a1">
+        \\        <transition event="t" cond="In('b1')" target="a2">
+        \\          <assign location="x" expr="x * 10"/>
+        \\        </transition>
+        \\      </state>
+        \\      <state id="a2">
+        \\        <onentry>
+        \\          <if cond="x === 1"><assign location="x" expr="-1"/>
+        \\          <elseif cond="x == 10"/><assign location="x" expr="x + 5"/>
+        \\          <else/><assign location="x" expr="-2"/></if>
+        \\        </onentry>
+        \\        <transition cond="x == 15 &amp;&amp; !In('a1')" target="pass"/>
+        \\      </state>
+        \\    </state>
+        \\    <state id="b"><state id="b1"/></state>
+        \\  </parallel>
+        \\  <final id="pass"/>
+        \\</scxml>
+    , &.{"t"});
+}
+
+test "SCXML: a delayed send, an after of its state" {
+    // A timeout: sent after 1 s, unless left before.
+    {
+        const prog = try loadScxml(
+            \\<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" name="test">
+            \\  <state id="wait">
+            \\    <onentry><send event="timeout" delay="1s"/></onentry>
+            \\    <transition event="timeout" target="pass"/>
+            \\  </state>
+            \\  <final id="pass"/>
+            \\</scxml>
+        , comptime harnessFor(&.{}), false);
+        defer prog.destroy();
+        const app = try prog.create(prog.component("Harness").?);
+        defer app.destroy();
+        var t = zigulee.core.now();
+        t += 500;
+        zigulee.updateTimersAndAnimations(t);
+        try testing.expectEqualStrings("wait", app.property("at").?.get().string);
+        t += 600;
+        zigulee.updateTimersAndAnimations(t);
+        try testing.expectEqualStrings("pass", app.property("at").?.get().string);
+    }
+}

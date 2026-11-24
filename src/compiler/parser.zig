@@ -46,6 +46,14 @@ pub const Parser = struct {
         return copy.next();
     }
 
+    /// The token `n` after the current one (1: `peekNext`).
+    fn peekAt(p: *Parser, n: usize) Token {
+        var copy = p.lexer;
+        var t = copy.next();
+        for (1..n) |_| t = copy.next();
+        return t;
+    }
+
     /// `nine-slice(a)`, `nine-slice(vertical horizontal)` or
     /// `nine-slice(top right bottom left)`: whole image pixels, as CSS's
     /// `border-image-slice`.
@@ -225,9 +233,10 @@ pub const Parser = struct {
     fn parseElementBody(p: *Parser, id: ?ast.Ident, type_name: ast.Ident) Error!ast.Element {
         const open = try p.expect(.l_brace);
         var members: std.ArrayList(ast.Member) = .empty;
+        const machine = std.mem.eql(u8, type_name.name, "StateMachine");
         while (p.tok.tag != .r_brace) {
             if (p.tok.tag == .eof) return p.fail(spanOf(open), "unclosed '{{'", .{});
-            try members.append(p.arena, try p.parseMember());
+            try members.append(p.arena, if (machine) try p.parseMachineMember() else try p.parseMember());
         }
         const close = p.advance();
         // Anchors need the siblings: rewritten once all are known.
@@ -341,6 +350,163 @@ pub const Parser = struct {
             },
             else => return p.fail(spanOf(p.tok), "expected ':', ':=', '{{', '<=>' or '=>' after '{s}', found {s}", .{ name.name, p.describeCurrent() }),
         }
+    }
+
+    /// A member of a `StateMachine`: its events, states and initial state,
+    /// or any member an element has.
+    fn parseMachineMember(p: *Parser) Error!ast.Member {
+        if (p.tok.tag == .identifier and p.peekNext().tag == .identifier) {
+            if (p.isWord("event")) {
+                const kw = p.advance();
+                const name = try p.ident();
+                var params: std.ArrayList(ast.Ident) = .empty;
+                if (p.tok.tag == .l_paren) {
+                    _ = p.advance();
+                    while (p.tok.tag != .r_paren) {
+                        try params.append(p.arena, try p.ident());
+                        if (p.tok.tag != .comma) break;
+                        _ = p.advance();
+                    }
+                    _ = try p.expect(.r_paren);
+                }
+                const end = try p.expect(.semicolon);
+                return .{ .event = .{ .name = name, .params = params.items, .span = .{ .start = kw.start, .end = end.end } } };
+            }
+            if (p.isWord("initial")) {
+                _ = p.advance();
+                const name = try p.ident();
+                _ = try p.expect(.semicolon);
+                return .{ .initial = name };
+            }
+            if (p.isWord("state") or p.isWord("parallel") or p.isWord("final")) return .{ .machine_state = try p.parseMachineState() };
+        }
+        return p.parseMember();
+    }
+
+    /// `state name { entered => { } exited => { } on ... after ... }`,
+    /// `parallel name { ... }`, `final name;` (or with entry and exit
+    /// actions: `final name { entered => { } }`).
+    fn parseMachineState(p: *Parser) Error!ast.MachineState {
+        const kw = p.advance();
+        const kw_text = p.source[kw.start..kw.end];
+        const kind: @FieldType(ast.MachineState, "kind") = if (std.mem.eql(u8, kw_text, "parallel")) .parallel else if (std.mem.eql(u8, kw_text, "final")) .final else .state;
+        const name = try p.ident();
+        if (kind == .final and p.tok.tag == .semicolon) {
+            const end = p.advance();
+            return .{ .kind = .final, .name = name, .transitions = &.{}, .span = .{ .start = kw.start, .end = end.end } };
+        }
+        const open = try p.expect(.l_brace);
+        var st: ast.MachineState = .{ .kind = kind, .name = name, .transitions = &.{}, .span = undefined };
+        var transitions: std.ArrayList(ast.MachineState.Transition) = .empty;
+        var children: std.ArrayList(ast.MachineState) = .empty;
+        while (p.tok.tag != .r_brace) {
+            if (p.tok.tag == .eof) return p.fail(spanOf(open), "unclosed '{{'", .{});
+            if (p.tok.tag != .identifier) return p.fail(spanOf(p.tok), "expected 'on', 'after', 'entered', 'exited', 'state', 'initial' or 'history', found {s}", .{p.describeCurrent()});
+            if (p.isWord("entered") or p.isWord("exited")) {
+                const entered = p.isWord("entered");
+                const word = p.advance();
+                _ = try p.expect(.fat_arrow);
+                const body = try p.parseBlock();
+                const slot = if (entered) &st.entered else &st.exited;
+                if (slot.* != null) return p.fail(.{ .start = word.start, .end = word.end }, "'{s}' is given twice", .{p.source[word.start..word.end]});
+                slot.* = body.stmts;
+                continue;
+            }
+            if (kind == .final) return p.fail(spanOf(p.tok), "a final state has only 'entered' and 'exited'", .{});
+            if ((p.isWord("state") or p.isWord("parallel") or p.isWord("final")) and p.peekNext().tag == .identifier) {
+                try children.append(p.arena, try p.parseMachineState());
+                continue;
+            }
+            if (p.isWord("initial") and p.peekNext().tag == .identifier) {
+                const word = p.advance();
+                if (st.initial != null) return p.fail(.{ .start = word.start, .end = word.end }, "'initial' is given twice", .{});
+                st.initial = try p.ident();
+                _ = try p.expect(.semicolon);
+                continue;
+            }
+            if (p.isWord("history")) {
+                const word = p.advance();
+                if (st.history != null) return p.fail(.{ .start = word.start, .end = word.end }, "'history' is given twice", .{});
+                const deep = p.isWord("deep");
+                if (deep) _ = p.advance();
+                const end = try p.expect(.semicolon);
+                st.history = .{ .deep = deep, .span = .{ .start = word.start, .end = end.end } };
+                continue;
+            }
+            try transitions.append(p.arena, try p.parseTransition());
+        }
+        const close = p.advance();
+        st.transitions = transitions.items;
+        st.children = children.items;
+        st.span = .{ .start = kw.start, .end = close.end };
+        return st;
+    }
+
+    /// `on event(params) when guard => target { actions }` or `after
+    /// duration when guard => target { actions }`: after the trigger, each
+    /// part optional; ends with the actions or a `;`.
+    fn parseTransition(p: *Parser) Error!ast.MachineState.Transition {
+        const start = p.tok.start;
+        var t: ast.MachineState.Transition = .{ .trigger = undefined, .guard = null, .target = null, .actions = &.{}, .span = undefined };
+        if (p.isWord("on") and p.peekNext().tag == .identifier and std.mem.eql(u8, p.text(p.peekNext()), "done") and p.peekAt(2).tag == .dot) {
+            // `on done.x`: a state's completion.
+            _ = p.advance();
+            _ = p.advance();
+            _ = p.advance();
+            var parts: std.ArrayList(ast.Ident) = .empty;
+            try parts.append(p.arena, try p.ident());
+            while (p.tok.tag == .dot) {
+                _ = p.advance();
+                try parts.append(p.arena, try p.ident());
+            }
+            t.trigger = .{ .done = .{ .parts = parts.items, .span = parts.items[0].span.join(parts.items[parts.items.len - 1].span) } };
+        } else if (p.isWord("on")) {
+            _ = p.advance();
+            const name = try p.ident();
+            var params: std.ArrayList(ast.Ident) = .empty;
+            if (p.tok.tag == .l_paren) {
+                _ = p.advance();
+                while (p.tok.tag != .r_paren) {
+                    try params.append(p.arena, try p.ident());
+                    if (p.tok.tag != .comma) break;
+                    _ = p.advance();
+                }
+                _ = try p.expect(.r_paren);
+            }
+            t.trigger = .{ .event = .{ .name = name, .params = params.items } };
+        } else if (p.isWord("after")) {
+            _ = p.advance();
+            t.trigger = .{ .after = try p.parseExpr() };
+        } else if (p.isWord("when")) {
+            // Eventless: the guard follows.
+            t.trigger = .eventless;
+        } else return p.fail(spanOf(p.tok), "expected 'on', 'after', 'when', 'entered' or 'exited', found {s}", .{p.describeCurrent()});
+        if (p.isWord("when")) {
+            _ = p.advance();
+            t.guard = try p.parseExpr();
+        }
+        if (p.tok.tag == .fat_arrow) {
+            _ = p.advance();
+            var parts: std.ArrayList(ast.Ident) = .empty;
+            try parts.append(p.arena, try p.ident());
+            while (p.tok.tag == .dot) {
+                _ = p.advance();
+                try parts.append(p.arena, try p.ident());
+            }
+            t.target = .{ .parts = parts.items, .span = parts.items[0].span.join(parts.items[parts.items.len - 1].span) };
+        }
+        var end: u32 = undefined;
+        if (p.tok.tag == .l_brace) {
+            const body = try p.parseBlock();
+            t.actions = body.stmts;
+            end = body.span.end;
+            if (p.tok.tag == .semicolon) _ = p.advance();
+        } else {
+            if (t.target == null) return p.fail(spanOf(p.tok), "expected '=>' and a state, or '{{' and actions, found {s}", .{p.describeCurrent()});
+            end = (try p.expect(.semicolon)).end;
+        }
+        t.span = .{ .start = start, .end = end };
+        return t;
     }
 
     /// `states [ name when condition : { prop: value; animate ... } ... ]`

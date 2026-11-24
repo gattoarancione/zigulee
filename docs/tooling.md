@@ -62,6 +62,38 @@ msgmerge -U it.po messages.pot        # after the texts change
 The texts of the standard widgets used (the DatePicker's month and day
 names, with the context `DatePicker`) are included.
 
+## SCXML
+
+`zgec scxml` converts a W3C [SCXML](https://www.w3.org/TR/scxml/) state
+chart, designed with an SCXML tool say, into a `.zge` file: a `global`
+holding the equivalent `StateMachine` (language.md, "State machines"),
+its data model the global's properties.
+
+```sh
+zgec scxml microwave.scxml -o microwave.zge   # to standard output without -o
+```
+
+```slint
+import { Microwave } from "microwave.zge";
+component Oven inherits Window {
+    Text { text: Microwave.machine.active(cooking) ? "Cooking" : "Idle"; }
+    TouchArea { clicked => { Microwave.machine.turn_on(); } }
+}
+```
+
+States (`<state>`, `<parallel>`, `<final>`, `<initial>`, `<history>`),
+transitions (`event`, `cond`, `target`; one per event, `done.state.x` as
+`done.x`, without an event as `when`), `<onentry>`, `<onexit>`, `<raise>`,
+`<send>` to the machine itself (with a `delay` in `<onentry>`, an `after`
+of the state, cancelled when it is left), `<assign>`, `<log>` and `<if>`
+convert one to one. Conditions and values in a small ECMAScript subset
+are translated: literals, data names, operators and `In('state')`. Names
+become valid `.zge` names (`turn.on` is `turn_on`), and data is read as
+`root.name`. What does not convert (`<invoke>`, `<script>`, `<foreach>`,
+event data, sends to other targets, wildcard events) is reported, with
+its line, and left in the output as a comment; the output still compiles.
+`examples/scxml/microwave.scxml` is the oven of the SCXML specification.
+
 ## zigulee-lsp and VS Code
 
 `zigulee-lsp` is a language server (over stdio): errors as you type,
