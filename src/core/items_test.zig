@@ -591,6 +591,7 @@ test "flickable: a tap still clicks the content" {
 }
 
 test "flickable: dragging steals the press from the content and scrolls" {
+    const t0 = core.now();
     const s = try Scroller.create();
     defer s.destroy();
     s.window.dispatchPointer(.{ .pressed = .{ .position = Scroller.at(50, 80) } });
@@ -599,14 +600,27 @@ test "flickable: dragging steals the press from the content and scrolls" {
     try testing.expect(!s.touch.pressed.get()); // got `exit`
     try testing.expectEqual(&s.flick.item, s.window.grabber.?);
     try testing.expectEqual(core.Point{ .x = 0, .y = -30 }, s.flick.viewportPosition());
+    // 380 px past the end (-200): pulled less and less, under the view's
+    // 100 px (1 - 1 / (380 * 0.55 / 100 + 1) of them).
     s.window.dispatchPointer(.{ .moved = .{ .position = Scroller.at(50, -500) } });
-    try testing.expectEqual(core.Point{ .x = 0, .y = -200 }, s.flick.viewportPosition()); // clamped
+    try testing.expectApproxEqAbs(@as(f32, -267.6), s.flick.viewportPosition().y, 0.1);
+    core.updateTimersAndAnimations(t0 + 200);
     s.window.dispatchPointer(.{ .released = .{ .position = Scroller.at(50, -500) } });
     try testing.expectEqual(@as(usize, 0), s.clicks);
     try testing.expectEqual(@as(?*core.Item, null), s.window.grabber);
+    // Let go: back to the end.
+    core.updateTimersAndAnimations(t0 + 200 + items.Flickable.flick_duration_ms);
+    try testing.expectEqual(core.Point{ .x = 0, .y = -200 }, s.flick.viewportPosition());
 
     // The content moved with the viewport: hit-testing follows it.
     try testing.expectEqual(@as(f32, -200), s.touch.item.absolutePosition().y);
+
+    // Without overscroll: held at the end.
+    s.flick.overscroll.set(false);
+    s.window.dispatchPointer(.{ .pressed = .{ .position = Scroller.at(50, 80) } });
+    s.window.dispatchPointer(.{ .moved = .{ .position = Scroller.at(50, 0) } });
+    try testing.expectEqual(core.Point{ .x = 0, .y = -200 }, s.flick.viewportPosition());
+    s.window.dispatchPointer(.{ .released = .{ .position = Scroller.at(50, 0) } });
 }
 
 test "the window sees every pointer event and input, a flickable's grabbed drag too" {
@@ -704,15 +718,41 @@ test "flickable: releasing while moving flicks, a press stops it" {
     try testing.expectEqual(@as(usize, 1), flicks);
     try testing.expectEqual(@as(f32, -30), s.flick.viewportPosition().y);
 
+    // Aimed 300 px further, past the end (-200): it overshoots the end.
     core.updateTimersAndAnimations(t0 + 20 + Scrolled.half);
     const mid = s.flick.viewportPosition().y;
-    try testing.expect(mid < -30 and mid > -200);
+    try testing.expect(mid < -200 and mid > -250);
     // A new press stops the flick where it is.
     s.window.dispatchPointer(.{ .pressed = .{ .position = Scroller.at(50, 50) } });
     core.updateTimersAndAnimations(t0 + 20 + 2 * items.Flickable.flick_duration_ms);
     try testing.expectEqual(mid, s.flick.viewportPosition().y);
     try testing.expect(!core.hasActiveAnimations());
+    // Let go: back to the end.
     s.window.dispatchPointer(.{ .released = .{ .position = Scroller.at(50, 50) } });
+    core.updateTimersAndAnimations(t0 + 20 + 3 * items.Flickable.flick_duration_ms);
+    try testing.expectEqual(@as(f32, -200), s.flick.viewportPosition().y);
+
+    // A shorter flick, not reaching the end: no overshoot.
+    s.flick.setViewportPosition(.{});
+    const t1 = t0 + 20 + 4 * items.Flickable.flick_duration_ms;
+    core.updateTimersAndAnimations(t1);
+    s.window.dispatchPointer(.{ .pressed = .{ .position = Scroller.at(50, 90) } });
+    core.updateTimersAndAnimations(t1 + 10);
+    s.window.dispatchPointer(.{ .moved = .{ .position = Scroller.at(50, 80) } });
+    core.updateTimersAndAnimations(t1 + 100);
+    s.window.dispatchPointer(.{ .moved = .{ .position = Scroller.at(50, 70) } }); // 0.11 px/ms
+    s.window.dispatchPointer(.{ .released = .{ .position = Scroller.at(50, 70) } });
+    var lowest: f32 = 0;
+    var t = t1 + 100;
+    while (t <= t1 + 100 + items.Flickable.flick_duration_ms) : (t += 10) {
+        core.updateTimersAndAnimations(t);
+        lowest = @min(lowest, s.flick.viewportPosition().y);
+    }
+    core.updateTimersAndAnimations(t1 + 100 + items.Flickable.flick_duration_ms);
+    // 20 px dragged, about 33 more flicked, never past where it stops.
+    const end = s.flick.viewportPosition().y;
+    try testing.expect(end < -40 and end > -200);
+    try testing.expectEqual(end, lowest);
 }
 
 const Scrolled = struct {

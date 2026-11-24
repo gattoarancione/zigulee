@@ -1553,6 +1553,10 @@ pub const Flickable = struct {
     /// Positions settle where the content says (a list's rows, a table's
     /// columns: `ItemVTable.snapPosition`), and on its ends.
     snap_to_items: Property(bool) = .init(false),
+    /// Dragged past its ends, the content follows less and less, and
+    /// springs back when let go; a flick into an end overshoots it and
+    /// settles.
+    overscroll: Property(bool) = .init(true),
     /// Called when a flick (kinetic scroll after release) starts.
     flicked: Callback(fn () void) = .{},
     gpa: Allocator,
@@ -1595,6 +1599,7 @@ pub const Flickable = struct {
         self.snap_x.deinit();
         self.snap_y.deinit();
         self.snap_to_items.deinit();
+        self.overscroll.deinit();
         self.item.deinit();
     }
 
@@ -1700,7 +1705,10 @@ pub const Flickable = struct {
     }
 
     fn beginPress(self: *Flickable, pos: Point) void {
-        self.setViewportPosition(self.viewportPosition());
+        // Stopped where it is (pulled past an end too).
+        const here = self.viewportPosition();
+        self.viewport.item.x.set(here.x);
+        self.viewport.item.y.set(here.y);
         self.following_end = null;
         self.heading_x = null;
         self.heading_y = null;
@@ -1731,7 +1739,44 @@ pub const Flickable = struct {
             self.drag.last_pos = pos;
             self.drag.last_time = now;
         }
-        self.setViewportPosition(self.drag.press_viewport.add(pos.sub(self.drag.press_pos)));
+        const to = self.drag.press_viewport.add(pos.sub(self.drag.press_pos));
+        const c = self.clamp(to);
+        if (!self.overscroll.get()) return self.setViewportPosition(c);
+        // Past an end: following less and less (as far as the view's size
+        // at most), along the directions it can be pulled.
+        const pull_x = self.scrolls(.horizontal);
+        const pull_y = self.scrolls(.vertical) or !pull_x;
+        self.viewport.item.x.set(if (pull_x) c.x + rubber(to.x - c.x, self.item.width.get()) else c.x);
+        self.viewport.item.y.set(if (pull_y) c.y + rubber(to.y - c.y, self.item.height.get()) else c.y);
+    }
+
+    /// Whether the content is larger than the view along `o`.
+    fn scrolls(self: *Flickable, o: Orientation) bool {
+        return if (o == .horizontal)
+            self.viewport.item.width.get() > self.item.width.get() + 0.5
+        else
+            self.viewport.item.height.get() > self.item.height.get() + 0.5;
+    }
+
+    /// How far content dragged `over` past an end goes, in a view `size`
+    /// long: about as far at first, then less and less, never `size`.
+    fn rubber(over: f32, size: f32) f32 {
+        if (over == 0 or size <= 0) return 0;
+        const a = @abs(over);
+        return std.math.sign(over) * (1 - 1 / (a * 0.55 / size + 1)) * size;
+    }
+
+    /// Settles on the nearest snap position, within the content's ends
+    /// (back from past them), animated: what scrolling ends with (a
+    /// scroll bar let go, say).
+    pub fn settle(self: *Flickable) void {
+        const target = self.snapped(self.viewportPosition());
+        const here = self.viewportPosition();
+        if (target.x == here.x and target.y == here.y) return;
+        self.viewport.item.x.setAnimated(self.gpa, target.x, snap_animation) catch self.viewport.item.x.set(target.x);
+        self.viewport.item.y.setAnimated(self.gpa, target.y, snap_animation) catch self.viewport.item.y.set(target.y);
+        self.heading_x = target.x;
+        self.heading_y = target.y;
     }
 
     fn startFlick(self: *Flickable) void {
@@ -1740,13 +1785,23 @@ pub const Flickable = struct {
         const v = self.drag.velocity;
         const moving = !resting and (@abs(v.x) >= 0.05 or @abs(v.y) >= 0.05);
         const reach: f32 = if (moving) flick_reach_ms else 0;
-        const target = self.snapped(self.viewportPosition().add(.{ .x = v.x * reach, .y = v.y * reach }));
         const here = self.viewportPosition();
+        const aim = here.add(.{ .x = v.x * reach, .y = v.y * reach });
+        const target = self.snapped(aim);
         if (!moving and target.x == here.x and target.y == here.y) return;
-        // A flick, or settling on the nearest snap position.
-        const anim: @import("animations.zig").Animation = .{ .duration_ms = if (moving) flick_duration_ms else snap_duration_ms, .easing = .ease_out_cubic };
-        self.viewport.item.x.setAnimated(self.gpa, target.x, anim) catch return;
-        self.viewport.item.y.setAnimated(self.gpa, target.y, anim) catch return;
+        // A flick (overshooting an end it runs into, from inside), or
+        // settling on the nearest snap position (back from past an end).
+        const Animation = @import("animations.zig").Animation;
+        const anim: Animation = .{ .duration_ms = if (moving) flick_duration_ms else snap_duration_ms, .easing = .ease_out_cubic };
+        const bounce: Animation = .{ .duration_ms = flick_duration_ms, .easing = .ease_out_back };
+        // Into an end: aimed past it, from inside and not already there.
+        const inside = self.clamp(here);
+        const aim_in = self.clamp(aim);
+        const over = moving and self.overscroll.get();
+        const ax = if (over and aim_in.x != aim.x and here.x == inside.x and here.x != target.x) bounce else anim;
+        const ay = if (over and aim_in.y != aim.y and here.y == inside.y and here.y != target.y) bounce else anim;
+        self.viewport.item.x.setAnimated(self.gpa, target.x, ax) catch return;
+        self.viewport.item.y.setAnimated(self.gpa, target.y, ay) catch return;
         self.heading_x = target.x;
         self.heading_y = target.y;
         if (moving) self.flicked.call(.{});
@@ -1831,6 +1886,9 @@ pub const Flickable = struct {
             },
             .released => {
                 if (self.drag.state == .dragging) return .intercept;
+                // A press that stopped it (past an end, between snap
+                // positions): settled.
+                if (self.drag.state == .pressed) self.settle();
                 self.drag.state = .idle;
                 return .forward_and_ignore;
             },

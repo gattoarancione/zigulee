@@ -455,7 +455,7 @@ Functions: `focus()`, `select-all()`, `clear-selection()`, `copy()`, `cut()`, `p
 
 ## Flickable
 
-Scrolls its children (the viewport) by dragging or the mouse wheel. Taps still reach the children. With `snap-x` or `snap-y`, scrolling settles on multiples of it; with `snap-to-items`, where the content says (a ListLayout's rows, under its pinned section header, and its columns when they have widths); either way on the content's ends too, and the wheel moves by one snap position. `scroll-to-top()` and `scroll-to-bottom()` scroll there; after `scroll-to-bottom()` it keeps at the bottom as the content's height changes (rows measured, rows added) until scrolled elsewhere.
+Scrolls its children (the viewport) by dragging or the mouse wheel. Taps still reach the children. With `snap-x` or `snap-y`, scrolling settles on multiples of it; with `snap-to-items`, where the content says (a ListLayout's rows, under its pinned section header, and its columns when they have widths); either way on the content's ends too, and the wheel moves by one snap position. `scroll-to-top()` and `scroll-to-bottom()` scroll there; after `scroll-to-bottom()` it keeps at the bottom as the content's height changes (rows measured, rows added) until scrolled elsewhere. With `overscroll` (the default), content dragged past its ends follows less and less and springs back when let go, and a flick into an end overshoots it and settles. `settle()` settles on the nearest snap position, within the ends (what a scroll bar let go calls).
 
 | Property | Type | Access |
 |---|---|---|
@@ -467,12 +467,13 @@ Scrolls its children (the viewport) by dragging or the mouse wheel. Taps still r
 | `snap-x` | length | in-out |
 | `snap-y` | length | in-out |
 | `snap-to-items` | bool | in-out |
+| `overscroll` | bool | in-out |
 
 Callbacks:
 
 - `flicked()`
 
-Functions: `scroll-to-top()`, `scroll-to-bottom()`
+Functions: `scroll-to-top()`, `scroll-to-bottom()`, `settle()`
 
 ## Timer
 

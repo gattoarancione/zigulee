@@ -19,6 +19,9 @@ export component ScrollView inherits Rectangle {
     var in <length> snap-x;
     var in <length> snap-y;
     var in <bool> snap-to-items;
+    // Dragged past its ends, the content follows less and less and
+    // springs back; a flick into an end overshoots it and settles.
+    var in <bool> overscroll: true;
     // Called when the user scrolls.
     callback scrolled();
 
@@ -69,6 +72,7 @@ export component ScrollView inherits Rectangle {
         snap-x: root.snap-x;
         snap-y: root.snap-y;
         snap-to-items: root.snap-to-items;
+        overscroll: root.overscroll;
         flicked => { root.scrolled(); }
         @children
     }
@@ -83,7 +87,7 @@ export component ScrollView inherits Rectangle {
         animate width { duration: 100ms; }
 
         Rectangle {
-            y: (parent.height - root.v-thumb) * ((0px - flick.viewport-y) / max(1px, flick.viewport-height - flick.height));
+            y: (parent.height - root.v-thumb) * max(0, min(1, (0px - flick.viewport-y) / max(1px, flick.viewport-height - flick.height)));
             height: root.v-thumb;
             border-radius: self.width / 2;
             background: vtouch.has-hover || vtouch.pressed ? Palette.scrollbar-hover : Palette.scrollbar;
@@ -94,9 +98,13 @@ export component ScrollView inherits Rectangle {
                     root.v-scroll-to();
                 }
             }
-            changed pressed => {
-                if self.pressed {
+            // Pressed: there; let go: on the nearest snap position.
+            pointer-event(e) => {
+                if e.kind == PointerEventKind.down {
                     root.v-scroll-to();
+                }
+                if e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel {
+                    flick.settle();
                 }
             }
         }
@@ -112,7 +120,7 @@ export component ScrollView inherits Rectangle {
         animate height { duration: 100ms; }
 
         Rectangle {
-            x: (parent.width - root.h-thumb) * ((0px - flick.viewport-x) / max(1px, flick.viewport-width - flick.width));
+            x: (parent.width - root.h-thumb) * max(0, min(1, (0px - flick.viewport-x) / max(1px, flick.viewport-width - flick.width)));
             width: root.h-thumb;
             border-radius: self.height / 2;
             background: htouch.has-hover || htouch.pressed ? Palette.scrollbar-hover : Palette.scrollbar;
@@ -123,9 +131,13 @@ export component ScrollView inherits Rectangle {
                     root.h-scroll-to();
                 }
             }
-            changed pressed => {
-                if self.pressed {
+            // Pressed: there; let go: on the nearest snap position.
+            pointer-event(e) => {
+                if e.kind == PointerEventKind.down {
                     root.h-scroll-to();
+                }
+                if e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel {
+                    flick.settle();
                 }
             }
         }

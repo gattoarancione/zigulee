@@ -156,6 +156,7 @@ Inherits `Rectangle`. A scrolling area with scroll bars. Its children are its co
 | `snap-x` | length | in |  | Scrolling settles on multiples of these (0: anywhere), or, with `snap-to-items`, where the content says (a ListView's rows, a TableView's columns); on the content's ends too. |
 | `snap-y` | length | in |  |  |
 | `snap-to-items` | bool | in |  |  |
+| `overscroll` | bool | in | `true` | Dragged past its ends, the content follows less and less and springs back; a flick into an end overshoots it and settles. |
 
 Callbacks:
 

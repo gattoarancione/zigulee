@@ -3813,6 +3813,20 @@ test "a list settles on its rows and a table on its columns; to the top and the 
     settle.run(&t);
     try testing.expectEqual(@as(f32, 0), list.viewport_y.get());
 
+    // The scroll bar (3 px wide at the list's right edge) dragged, then
+    // let go: on a row's top, or the bottom.
+    for ([_]f32{ 37, 52, 81 }) |to| {
+        w.dispatchPointer(.{ .pressed = .{ .position = .{ .x = 96, .y = 10 } } });
+        w.dispatchPointer(.{ .moved = .{ .position = .{ .x = 96, .y = to } } });
+        const dragged = list.viewport_y.get();
+        w.dispatchPointer(.{ .released = .{ .position = .{ .x = 96, .y = to } } });
+        settle.run(&t);
+        const y = list.viewport_y.get();
+        try testing.expect(@mod(y, 30) == 0 or y == list.visible_height.get() - list.viewport_height.get());
+        // The nearest one to where it was dragged.
+        try testing.expect(@abs(y - dragged) <= 15);
+    }
+
     // The table, sideways: three 80 px columns in 100 px; a step lands on
     // the second column's edge, the next on the right end.
     const right: zigulee.core.Point = .{ .x = 150, .y = 70 };
