@@ -12,6 +12,14 @@ export component ViewSettings inherits Settings {
     var in-out <color> tint: #336699;
 }
 
+// In the registry on Windows (not made here: a test leaves it alone).
+component RegistrySettings inherits Settings {
+    category: "window";
+    format: registry;
+    file: "Software/zigulee-tests";
+    var in-out <bool> maximized;
+}
+
 component MoreSettings inherits ViewSettings {
     var in-out <bool> dark;
 }

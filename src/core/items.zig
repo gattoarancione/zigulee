@@ -472,6 +472,7 @@ pub const Connections = struct {
 pub const FileDialogElement = @import("dialogs.zig").FileDialogElement;
 pub const FileDialogMode = @import("dialogs.zig").FileDialogMode;
 pub const Settings = @import("settings.zig").Settings;
+pub const SettingsFormat = @import("settings.zig").SettingsFormat;
 pub const StandardPaths = @import("paths.zig").StandardPaths;
 pub const Canvas = @import("canvas.zig").Canvas;
 pub const LineChart = @import("charts.zig").LineChart;

@@ -259,6 +259,7 @@ const builtin_enums = .{
     .{ &types.popup_close_policy, core.items.PopupClosePolicy },
     .{ &types.file_dialog_mode, core.items.FileDialogMode },
     .{ &types.http_method, core.items.HttpMethod },
+    .{ &types.settings_format, core.items.SettingsFormat },
     .{ &types.swipe_direction, core.items.SwipeDirection },
     .{ &types.device_orientation, core.sensors.Orientation },
     .{ &types.position_error, core.location.Failure },

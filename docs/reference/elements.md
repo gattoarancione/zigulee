@@ -1141,7 +1141,7 @@ Functions: `send()`, `dismiss()`
 
 ## Settings
 
-Properties kept from one run of the application to the next: a component that inherits `Settings` has its declared properties (int, float, bool, string, length, duration, color) saved, under `category`, in `settings.ini` in the application's configuration folder (`StandardPaths`' `app-config`), or in `file`. Saved values replace the defaults once the component and its users are set up, so properties linked to them with `<=>` take them too. Changes are written a moment later, and when it goes. Where there are no files (the web, microcontrollers), they last as long as the application. Not drawn.
+Properties kept from one run of the application to the next: a component that inherits `Settings` has its declared properties (int, float, bool, string, length, duration, color) saved, under `category`, in `settings.ini` in the application's configuration folder (`StandardPaths`' `app-config`), or in `file`. With `format: registry`, on Windows they go in the registry instead, as QSettings does: under `HKEY_CURRENT_USER\Software\<app>`, or the key given as `file` (under `HKEY_CURRENT_USER`), a key per category; elsewhere `registry` is an INI file still. Saved values replace the defaults once the component and its users are set up, so properties linked to them with `<=>` take them too. Changes are written a moment later, and when it goes. Where there are no files (the web, microcontrollers), they last as long as the application. Not drawn.
 
 Takes no child elements.
 
@@ -1149,6 +1149,7 @@ Takes no child elements.
 |---|---|---|
 | `category` | string | in-out |
 | `file` | string | in-out |
+| `format` | SettingsFormat | in-out |
 
 ## StandardPaths
 
@@ -1327,3 +1328,4 @@ Values of enumeration properties, written without the type name
 | `TextFormat` | `markdown`, `html` |
 | `SelectionMode` | `single`, `extended`, `multiple` |
 | `HttpMethod` | `get`, `post`, `put`, `patch`, `delete`, `head` |
+| `SettingsFormat` | `ini`, `registry` |

@@ -1059,6 +1059,23 @@ them too; changes are written a moment later, and when it goes. Where
 there are no files (the web, microcontrollers), they last as long as the
 application.
 
+On Windows they can go in the registry instead, as `QSettings` keeps them:
+with `format: registry`, under `HKEY_CURRENT_USER\Software\<app>`, a key
+per category (`HKEY_CURRENT_USER\Software\<app>\editor` above). ints and
+bools are DWORD values, durations QWORD values, the rest strings. `file`
+names another key under `HKEY_CURRENT_USER` (`/` separates keys too). On
+other systems `registry` still means the INI file, so one component serves
+everywhere:
+
+```slint
+component EditorSettings inherits Settings {
+    category: "editor";
+    format: registry;
+    file: "Software/Acme/Editor";
+    var in-out <bool> wrap: true;
+}
+```
+
 `std-widgets.zge` has two kinds of `Audio` ready to use: `Sound` for effects
 (4 voices, so a sound can play over itself) and `Music` (looping, fading
 in over 500 ms and out over 1 s):

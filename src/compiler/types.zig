@@ -257,7 +257,7 @@ pub fn modelOf(t: Type) ?Type {
 }
 
 /// The built-in enumerations.
-pub const enums = [_]*const Enum{ &text_horizontal_alignment, &text_vertical_alignment, &text_wrap, &layout_alignment, &event_result, &orientation, &pointer_event_kind, &pointer_event_button, &image_fit, &image_rendering, &image_status, &device_orientation, &position_error, &input_type, &popup_close_policy, &accessible_role, &mouse_cursor, &text_overflow, &font_size_mode, &file_dialog_mode, &swipe_direction, &text_format, &selection_mode, &http_method };
+pub const enums = [_]*const Enum{ &text_horizontal_alignment, &text_vertical_alignment, &text_wrap, &layout_alignment, &event_result, &orientation, &pointer_event_kind, &pointer_event_button, &image_fit, &image_rendering, &image_status, &device_orientation, &position_error, &input_type, &popup_close_policy, &accessible_role, &mouse_cursor, &text_overflow, &font_size_mode, &file_dialog_mode, &swipe_direction, &text_format, &selection_mode, &http_method, &settings_format };
 
 pub const selection_mode: Enum = .{
     .name = "SelectionMode",
@@ -281,6 +281,12 @@ pub const http_method: Enum = .{
     .name = "HttpMethod",
     .zig = "zigulee.core.http.Method",
     .values = &.{ .{ "get", "get" }, .{ "post", "post" }, .{ "put", "put" }, .{ "patch", "patch" }, .{ "delete", "delete" }, .{ "head", "head" } },
+};
+
+pub const settings_format: Enum = .{
+    .name = "SettingsFormat",
+    .zig = "zigulee.items.SettingsFormat",
+    .values = &.{ .{ "ini", "ini" }, .{ "registry", "registry" } },
 };
 
 pub const file_dialog_mode: Enum = .{
@@ -1714,7 +1720,7 @@ pub const builtins = [_]Builtin{
     },
     .{
         .name = "Settings",
-        .doc = "Properties kept from one run of the application to the next: a component that inherits `Settings` has its declared properties (int, float, bool, string, length, duration, color) saved, under `category`, in `settings.ini` in the application's configuration folder (`StandardPaths`' `app-config`), or in `file`. Saved values replace the defaults once the component and its users are set up, so properties linked to them with `<=>` take them too. Changes are written a moment later, and when it goes. Where there are no files (the web, microcontrollers), they last as long as the application. Not drawn.",
+        .doc = "Properties kept from one run of the application to the next: a component that inherits `Settings` has its declared properties (int, float, bool, string, length, duration, color) saved, under `category`, in `settings.ini` in the application's configuration folder (`StandardPaths`' `app-config`), or in `file`. With `format: registry`, on Windows they go in the registry instead, as QSettings does: under `HKEY_CURRENT_USER\\Software\\<app>`, or the key given as `file` (under `HKEY_CURRENT_USER`), a key per category; elsewhere `registry` is an INI file still. Saved values replace the defaults once the component and its users are set up, so properties linked to them with `<=>` take them too. Changes are written a moment later, and when it goes. Where there are no files (the web, microcontrollers), they last as long as the application. Not drawn.",
         .zig_type = "zigulee.items.Settings",
         .init_call = "init(gpa)",
         .children = false,
@@ -1722,6 +1728,7 @@ pub const builtins = [_]Builtin{
         .props = &.{
             .{ .name = "category", .ty = .string, .zig = "category" },
             .{ .name = "file", .ty = .string, .zig = "file" },
+            .{ .name = "format", .ty = .{ .enumeration = &settings_format }, .zig = "format" },
         },
     },
     .{
