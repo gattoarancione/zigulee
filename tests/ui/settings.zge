@@ -3,7 +3,8 @@
 
 // Settings: a component inheriting `Settings` keeps its properties, and
 // one inheriting that the ones it adds; a property linked to one takes
-// its saved value. StandardPaths: where the documents are.
+// its saved value; other values by key, the keys and groups listed.
+// StandardPaths: where the documents are.
 export component ViewSettings inherits Settings {
     category: "view";
     var in-out <int> count: 3;
@@ -30,6 +31,19 @@ export component SettingsApp inherits Window {
     var in <string> file;
     var in-out <int> clicks;
     var out <string> documents: paths.documents;
+    var out <string> recent;
+    var out <bool> has-recent;
+    var out <int> keys: store.all-keys.length;
+    var out <int> groups: store.child-groups.length;
+    public function remember(file: string) {
+        store.set-value("recent/first", file);
+        root.recent = store.value("recent/first");
+        root.has-recent = store.contains("recent/first");
+    }
+    public function forget() {
+        store.remove("recent");
+        root.has-recent = store.contains("recent/first");
+    }
     paths := StandardPaths {}
     store := MoreSettings {
         file: root.file;

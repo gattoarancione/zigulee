@@ -141,6 +141,9 @@ pub const json = @import("json.zig");
 pub const keyboard_input = @import("keyboard_input.zig");
 /// Properties kept from one run to the next (`Settings`).
 pub const settings = @import("settings.zig");
+/// The Windows registry under HKEY_CURRENT_USER (where `Settings` can keep
+/// its values).
+pub const registry = @import("registry.zig");
 pub const menus = @import("menus.zig");
 /// The system tray and desktop notifications.
 pub const tray = @import("tray.zig");
@@ -288,6 +291,7 @@ test {
     _ = json;
     _ = keyboard_input;
     _ = settings;
+    _ = registry;
     _ = menus;
     _ = tray;
     _ = png_mod;

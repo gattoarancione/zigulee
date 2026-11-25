@@ -2504,8 +2504,9 @@ const Env = struct {
                 const params = if (f.obj.meta.decl.function(f.name)) |decl| decl.params else &.{};
                 const values = try env.scratch.alloc(Value, params.len);
                 for (values, params, 0..) |*v, t, i| v.* = if (i < args.len) try env.eval(args[i], t) else try value_mod.defaultValue(t, env.scratch);
-                _ = f.obj.meta.function(f.obj.ptr, f.name, values);
-                return .void;
+                const result = f.obj.meta.function(f.obj.ptr, f.name, values) orelse return .void;
+                // Strings live in the element only until its next call.
+                return if (result == .string) .{ .string = try env.scratch.dupe(u8, result.string) } else result;
             },
             .comp_function => |cf| {
                 const decl = cf.inst.comp.functions.items[cf.index];

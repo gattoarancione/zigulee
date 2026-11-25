@@ -789,8 +789,12 @@ pub const Generator = struct {
     }
 
     fn callbackDetail(g: *Generator, name: []const u8, params: []const Type, ret: Type) Allocator.Error![]const u8 {
+        return g.signatureDetail("callback", name, params, ret);
+    }
+
+    fn signatureDetail(g: *Generator, keyword: []const u8, name: []const u8, params: []const Type, ret: Type) Allocator.Error![]const u8 {
         var out: std.ArrayList(u8) = .empty;
-        try out.appendSlice(g.arena, try g.print("callback {s}(", .{name}));
+        try out.appendSlice(g.arena, try g.print("{s} {s}(", .{ keyword, name }));
         for (params, 0..) |t, i| try out.appendSlice(g.arena, try g.print("{s}{s}", .{ if (i > 0) ", " else "", t.name() }));
         try out.append(g.arena, ')');
         if (ret != .void) try out.appendSlice(g.arena, try g.print(" -> {s}", .{ret.name()}));
@@ -883,7 +887,7 @@ pub const Generator = struct {
             for (types.accessible_callbacks) |cb| try list.append(g.arena, .{ .name = cb.name, .kind = .callback, .detail = try g.callbackDetail(cb.name, cb.params, cb.ret) });
             for (b.props) |p| try list.append(g.arena, .{ .name = p.name, .kind = .property, .detail = try g.print("var {s}<{s}> {s}", .{ if (p.read_only) "out " else "", p.ty.name(), p.name }) });
             for (b.callbacks) |cb| try list.append(g.arena, .{ .name = cb.name, .kind = .callback, .detail = try g.callbackDetail(cb.name, cb.params, cb.ret) });
-            for (b.functions) |f| try list.append(g.arena, .{ .name = f.name, .kind = .function, .detail = try g.print("function {s}()", .{f.name}) });
+            for (b.functions) |f| try list.append(g.arena, .{ .name = f.name, .kind = .function, .detail = try g.signatureDetail("function", f.name, f.params, f.ret) });
             try ix.members.put(g.arena, try g.print("builtin:{s}", .{b.name}), list.items);
         }
         for (g.comps.values()) |c| {
@@ -1895,7 +1899,7 @@ pub const Generator = struct {
                     return .{ .property = .{ .path = path, .ty = p.ty, .read_only = p.read_only, .read_only_reason = "it is an output of the element", .anim = anim, .optional = p.optional, .sym = .{ .builtin = .{ .b = b, .name = p.name } } } };
                 }
                 if (b.callback(name)) |cb| return .{ .callback = .{ .path = try g.print("{s}.{s}", .{ base, cb.zig }), .params = cb.params, .ret = cb.ret, .sym = .{ .builtin = .{ .b = b, .name = cb.name } } } };
-                if (b.function(name)) |f| return .{ .function = .{ .prefix = try g.print("self.{s}.", .{base}), .method = f.zig, .params = f.params, .sym = .{ .builtin = .{ .b = b, .name = f.name } } } };
+                if (b.function(name)) |f| return .{ .function = .{ .prefix = try g.print("self.{s}.", .{base}), .method = f.zig, .params = f.params, .ret = f.ret, .sym = .{ .builtin = .{ .b = b, .name = f.name } } } };
                 return null;
             },
             .component => |sub| {

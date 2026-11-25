@@ -13,6 +13,10 @@
 //! changes are written a moment later, and when it is destroyed. Where
 //! there are no files (the web, microcontrollers), they last as long as
 //! the application.
+//!
+//! Other values are reached by key: the element's `value`, `setValue`,
+//! `contains`, `remove`, `all_keys` and `child_groups`, or, from code, a
+//! `Store`.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -20,9 +24,11 @@ const Allocator = std.mem.Allocator;
 const properties = @import("properties.zig");
 const Property = properties.Property;
 const item_mod = @import("item.zig");
+const model = @import("model.zig");
 const Timer = @import("timers.zig").Timer;
 const Color = @import("graphics.zig").Color;
 const paths = @import("paths.zig");
+pub const registry = @import("registry.zig");
 
 const log = std.log.scoped(.zigulee);
 
@@ -34,18 +40,309 @@ pub const save_delay_ms = 300;
 pub const SettingsFormat = enum {
     /// An INI file, on every system.
     ini,
-    /// The Windows registry: a key per category under
-    /// `HKEY_CURRENT_USER`. An INI file elsewhere.
+    /// The Windows registry: a key per group under `HKEY_CURRENT_USER`.
+    /// An INI file elsewhere.
     registry,
 };
 
 /// Whether `registry` uses the registry here.
-pub const has_registry = builtin.os.tag == .windows;
+pub const has_registry = registry.supported;
+
+/// A value read: a number (from the registry's DWORD and QWORD values) or
+/// text.
+pub const Value = union(enum) {
+    number: i64,
+    text: []const u8,
+};
+
+/// Values by group and key, where `Settings` keeps them: an INI file
+/// (a section per group), or on Windows the registry (a key per group).
+/// Groups are paths with `/` (`"window/size"`); a key may reach into
+/// groups too (`get(a, "window", "size/width")`). Changes to an INI file
+/// are written by `sync`; the registry's at once. Values come back as
+/// they were set: text as text, numbers in the registry as numbers.
+pub const Store = struct {
+    arena: std.heap.ArenaAllocator,
+    where: union(enum) {
+        /// The file's lines; `path` null where there is none (they last
+        /// as long as the store).
+        ini: struct { path: ?[]const u8, doc: Ini, dirty: bool = false },
+        /// The key under `HKEY_CURRENT_USER` (null in tests, unless given).
+        registry: ?[]const u8,
+    },
+
+    /// Opens the values at `at`: a file, or with `registry` (on
+    /// Windows) a key under `HKEY_CURRENT_USER`; "" for the application's
+    /// (`settings.ini` in its configuration folder, or `Software\<app>`).
+    /// In tests "" is a store of their own, in memory.
+    pub fn open(gpa: Allocator, format: SettingsFormat, at: []const u8) Allocator.Error!Store {
+        var s: Store = .{ .arena = .init(gpa), .where = undefined };
+        errdefer s.arena.deinit();
+        const a = s.arena.allocator();
+        if (has_registry and format == .registry) {
+            s.where = .{ .registry = if (at.len > 0)
+                try a.dupe(u8, at)
+            else if (builtin.is_test)
+                null
+            else
+                try std.mem.concat(a, u8, &.{ "Software\\", paths.applicationName() }) };
+            return s;
+        }
+        const path = try iniPath(a, at);
+        const text = if (path) |p| readFile(a, p) orelse "" else "";
+        s.where = .{ .ini = .{ .path = path, .doc = try Ini.parse(a, text) } };
+        return s;
+    }
+
+    pub fn deinit(s: *Store) void {
+        s.arena.deinit();
+    }
+
+    /// Where it is: the file, or the registry key; null if nowhere.
+    pub fn location(s: *const Store) ?[]const u8 {
+        return switch (s.where) {
+            .ini => |i| i.path,
+            .registry => |r| r,
+        };
+    }
+
+    /// The value of `key` in `group`; null if there is none. Text is
+    /// allocated with `a`.
+    pub fn get(s: *Store, a: Allocator, group: []const u8, key: []const u8) ?Value {
+        const at = place(a, group, key) catch return null;
+        switch (s.where) {
+            .ini => |*i| {
+                const sec = i.doc.section(at.group) orelse return null;
+                const raw = sec.value(at.name) orelse return null;
+                return .{ .text = unescape(a, std.mem.trimStart(u8, raw, " \t")) catch return null };
+            },
+            .registry => |base| {
+                if (!has_registry) unreachable;
+                const k = registry.open(a, keyPath(a, base orelse return null, at.group) catch return null) orelse return null;
+                defer k.close();
+                return switch (k.get(a, at.name) orelse return null) {
+                    .number => |n| .{ .number = n },
+                    .text => |t| .{ .text = t },
+                    .other => null,
+                };
+            },
+        }
+    }
+
+    /// `get` as text: numbers in decimal.
+    pub fn getText(s: *Store, a: Allocator, group: []const u8, key: []const u8) ?[]const u8 {
+        return switch (s.get(a, group, key) orelse return null) {
+            .text => |t| t,
+            .number => |n| std.fmt.allocPrint(a, "{d}", .{n}) catch null,
+        };
+    }
+
+    pub fn contains(s: *Store, group: []const u8, key: []const u8) bool {
+        var arena: std.heap.ArenaAllocator = .init(s.arena.child_allocator);
+        defer arena.deinit();
+        return s.get(arena.allocator(), group, key) != null;
+    }
+
+    /// Sets `key` in `group` to `text` (a string in the registry).
+    pub fn setText(s: *Store, group: []const u8, key: []const u8, text: []const u8) !void {
+        switch (s.where) {
+            .ini => {
+                var out: std.Io.Writer.Allocating = .init(s.arena.allocator());
+                try writeEscaped(&out.writer, text);
+                try s.setIniLine(group, key, out.written());
+            },
+            .registry => try s.setRegistry(group, key, .{ .text = text }),
+        }
+    }
+
+    /// Sets `key` in `group` to `n` (in the registry, a DWORD value if it
+    /// fits, else a QWORD one).
+    pub fn setInt(s: *Store, group: []const u8, key: []const u8, n: i64) !void {
+        switch (s.where) {
+            .ini => try s.setIniLine(group, key, try std.fmt.allocPrint(s.arena.allocator(), "{d}", .{n})),
+            .registry => try s.setRegistry(group, key, .{ .number = n }),
+        }
+    }
+
+    /// Sets `key` in `group` to `true` or `false` (in the registry, a
+    /// DWORD value, 1 or 0).
+    pub fn setBool(s: *Store, group: []const u8, key: []const u8, b: bool) !void {
+        switch (s.where) {
+            .ini => try s.setIniLine(group, key, if (b) "true" else "false"),
+            .registry => try s.setRegistry(group, key, .{ .number = @intFromBool(b) }),
+        }
+    }
+
+    fn setIniLine(s: *Store, group: []const u8, key: []const u8, value: []const u8) !void {
+        const a = s.arena.allocator();
+        const at = try place(a, group, key);
+        if (at.name.len == 0) return error.InvalidKey;
+        const sec = try s.where.ini.doc.sectionOrNew(a, at.group);
+        try sec.set(a, at.name, try std.mem.concat(a, u8, &.{ at.name, "=", value }));
+        s.where.ini.dirty = true;
+    }
+
+    fn setRegistry(s: *Store, group: []const u8, key: []const u8, v: Value) !void {
+        if (!has_registry) unreachable;
+        var arena: std.heap.ArenaAllocator = .init(s.arena.child_allocator);
+        defer arena.deinit();
+        const a = arena.allocator();
+        const at = try place(a, group, key);
+        if (at.name.len == 0) return error.InvalidKey;
+        const k = try registry.create(a, try keyPath(a, s.where.registry orelse return, at.group));
+        defer k.close();
+        switch (v) {
+            .text => |t| try k.setString(a, at.name, t),
+            .number => |n| if (std.math.cast(i32, n)) |small|
+                try k.setDword(a, at.name, @bitCast(small))
+            else
+                try k.setQword(a, at.name, @bitCast(n)),
+        }
+    }
+
+    /// Removes `key` from `group`, and the group of that name with
+    /// everything in it (`key` "": `group` itself; both "": everything).
+    pub fn remove(s: *Store, group: []const u8, key: []const u8) !void {
+        var arena: std.heap.ArenaAllocator = .init(s.arena.child_allocator);
+        defer arena.deinit();
+        const a = arena.allocator();
+        const at = try place(a, group, key);
+        const full = try joinPath(a, at.group, at.name);
+        switch (s.where) {
+            .ini => |*i| {
+                if (at.name.len > 0) if (i.doc.section(at.group)) |sec| {
+                    if (sec.remove(at.name)) i.dirty = true;
+                };
+                if (i.doc.removeGroup(full)) i.dirty = true;
+            },
+            .registry => |base_or_null| {
+                if (!has_registry) unreachable;
+                const base = base_or_null orelse return;
+                if (at.name.len > 0) if (registry.open(a, try keyPath(a, base, at.group))) |k| {
+                    // `open` reads only: deleting needs a key opened for writing.
+                    k.close();
+                    const w = try registry.create(a, try keyPath(a, base, at.group));
+                    defer w.close();
+                    _ = w.deleteValue(a, at.name);
+                };
+                _ = registry.deleteTree(a, try keyPath(a, base, full));
+            },
+        }
+    }
+
+    /// The keys in `group` (not those in its groups), allocated with `a`.
+    pub fn keys(s: *Store, a: Allocator, group: []const u8) Allocator.Error![]const []const u8 {
+        const g = try place(a, group, "");
+        switch (s.where) {
+            .ini => |*i| {
+                const sec = i.doc.section(g.group) orelse return &.{};
+                var list: std.ArrayList([]const u8) = .empty;
+                for (sec.lines.items) |l| if (l.key) |k| try list.append(a, try a.dupe(u8, k));
+                return list.items;
+            },
+            .registry => |base| {
+                if (!has_registry) unreachable;
+                const k = registry.open(a, try keyPath(a, base orelse return &.{}, g.group)) orelse return &.{};
+                defer k.close();
+                return k.valueNames(a) catch |err| switch (err) {
+                    error.OutOfMemory => error.OutOfMemory,
+                    else => &.{},
+                };
+            },
+        }
+    }
+
+    /// The groups in `group` (its children only), allocated with `a`.
+    pub fn groups(s: *Store, a: Allocator, group: []const u8) Allocator.Error![]const []const u8 {
+        const g = try place(a, group, "");
+        switch (s.where) {
+            .ini => |*i| {
+                var list: std.ArrayList([]const u8) = .empty;
+                for (i.doc.sections.items[1..]) |sec| {
+                    const rest = if (g.group.len == 0)
+                        sec.name
+                    else if (sec.name.len > g.group.len and std.mem.startsWith(u8, sec.name, g.group) and sec.name[g.group.len] == '/')
+                        sec.name[g.group.len + 1 ..]
+                    else
+                        continue;
+                    const child = rest[0 .. std.mem.indexOfScalar(u8, rest, '/') orelse rest.len];
+                    if (child.len == 0) continue;
+                    for (list.items) |c| {
+                        if (std.mem.eql(u8, c, child)) break;
+                    } else try list.append(a, try a.dupe(u8, child));
+                }
+                return list.items;
+            },
+            .registry => |base| {
+                if (!has_registry) unreachable;
+                const k = registry.open(a, try keyPath(a, base orelse return &.{}, g.group)) orelse return &.{};
+                defer k.close();
+                return k.subkeys(a) catch |err| switch (err) {
+                    error.OutOfMemory => error.OutOfMemory,
+                    else => &.{},
+                };
+            },
+        }
+    }
+
+    /// Writes the changes to an INI file (keeping what else it holds).
+    pub fn sync(s: *Store) !void {
+        switch (s.where) {
+            .ini => |*i| {
+                if (!i.dirty) return;
+                const path = i.path orelse return;
+                var arena: std.heap.ArenaAllocator = .init(s.arena.child_allocator);
+                defer arena.deinit();
+                try writeFile(arena.allocator(), path, try i.doc.write(arena.allocator()));
+                i.dirty = false;
+            },
+            .registry => {},
+        }
+    }
+
+    /// The INI file for `location`; null where there are no files (and
+    /// in tests, unless it is given: they leave the user's alone).
+    fn iniPath(a: Allocator, at: []const u8) Allocator.Error!?[]const u8 {
+        if (!paths.has_files) return null;
+        if (at.len > 0) return try a.dupe(u8, at);
+        if (builtin.is_test) return null;
+        const dir = try paths.get(a, .app_config);
+        if (dir.len == 0) return null;
+        return try std.fs.path.join(a, &.{ dir, "settings.ini" });
+    }
+
+    const Place = struct { group: []const u8, name: []const u8 };
+
+    /// `key` in `group` as the group it is in and its name (`key` "":
+    /// `group` itself, no name). `/` between groups, none at the ends
+    /// (`\` taken for `/`).
+    fn place(a: Allocator, group: []const u8, key: []const u8) Allocator.Error!Place {
+        const full = try joinPath(a, group, key);
+        std.mem.replaceScalar(u8, full, '\\', '/');
+        if (key.len == 0) return .{ .group = full, .name = "" };
+        const i = std.mem.lastIndexOfScalar(u8, full, '/') orelse return .{ .group = "", .name = full };
+        return .{ .group = full[0..i], .name = full[i + 1 ..] };
+    }
+
+    fn joinPath(a: Allocator, group: []const u8, key: []const u8) Allocator.Error![]u8 {
+        const g = std.mem.trim(u8, group, "/\\");
+        const k = std.mem.trim(u8, key, "/\\");
+        if (g.len == 0) return a.dupe(u8, k);
+        if (k.len == 0) return a.dupe(u8, g);
+        return std.mem.concat(a, u8, &.{ g, "/", k });
+    }
+
+    fn keyPath(a: Allocator, base: []const u8, group: []const u8) Allocator.Error![]const u8 {
+        return joinPath(a, base, group);
+    }
+};
 
 /// Initialize in place with `init`.
 pub const Settings = struct {
     item: item_mod.Item = .init(&vtable),
-    /// The section of the file its values are in ("": before any).
+    /// The group its values are in: a section of the file, a key in the
+    /// registry ("": the file's lines before any section, or the key
+    /// itself). `/` separates groups in it.
     category: Property([]const u8) = .init(""),
     /// The file; empty for `settings.ini` in the application's
     /// configuration folder.
@@ -54,6 +351,11 @@ pub const Settings = struct {
     /// under `HKEY_CURRENT_USER` (`Software\<app>` if empty; `/`
     /// separates keys too), and each category a key in it.
     format: Property(SettingsFormat) = .init(.ini),
+    /// The keys in `category` (theirs and others'), as last read or
+    /// written.
+    all_keys: Property(model.Model([]const u8)) = undefined,
+    /// The groups in `category`, as last read or written.
+    child_groups: Property(model.Model([]const u8)) = undefined,
 
     gpa: Allocator = undefined,
     entries: std.ArrayList(Entry) = .empty,
@@ -65,6 +367,10 @@ pub const Settings = struct {
     save_timer: Timer = .{},
     /// Its values as last read or written, to write only changes.
     last: []u8 = &.{},
+    key_list: model.VecModel([]const u8) = undefined,
+    group_list: model.VecModel([]const u8) = undefined,
+    /// What `value` returned last.
+    value_text: []u8 = &.{},
 
     /// The kinds of values it keeps.
     pub const Kind = enum { int, float, duration, bool, string, color };
@@ -78,7 +384,9 @@ pub const Settings = struct {
     };
 
     pub fn init(self: *Settings, gpa: Allocator) void {
-        self.* = .{ .gpa = gpa };
+        self.* = .{ .gpa = gpa, .key_list = .init(gpa), .group_list = .init(gpa) };
+        self.all_keys = .init(self.key_list.model());
+        self.child_groups = .init(self.group_list.model());
         self.start = .init(self, begin);
     }
 
@@ -91,10 +399,17 @@ pub const Settings = struct {
         self.strings.deinit(self.gpa);
         self.entries.deinit(self.gpa);
         self.gpa.free(self.last);
+        self.gpa.free(self.value_text);
+        freeAll(self.gpa, &self.key_list);
+        freeAll(self.gpa, &self.group_list);
+        self.key_list.deinit();
+        self.group_list.deinit();
         self.item.deinit();
         self.category.deinit();
         self.file.deinit();
         self.format.deinit();
+        self.all_keys.deinit();
+        self.child_groups.deinit();
     }
 
     /// The kind of a property's values, or null if they cannot be kept.
@@ -123,6 +438,71 @@ pub const Settings = struct {
         self.start.schedule();
     }
 
+    /// Where its values are, opened.
+    pub fn openStore(self: *Settings) Allocator.Error!Store {
+        return Store.open(self.gpa, self.format.getUntracked(), self.file.getUntracked());
+    }
+
+    /// The value of `key` in `category` (`/` reaches into its groups) as
+    /// text, "" if there is none; numbers in the registry in decimal. The
+    /// text lasts until the next call.
+    pub fn value(self: *Settings, key: []const u8) []const u8 {
+        self.flush();
+        var store = self.openStore() catch return "";
+        defer store.deinit();
+        var arena: std.heap.ArenaAllocator = .init(self.gpa);
+        defer arena.deinit();
+        const text = store.getText(arena.allocator(), self.category.getUntracked(), key) orelse "";
+        const copy = self.gpa.dupe(u8, text) catch return "";
+        self.gpa.free(self.value_text);
+        self.value_text = copy;
+        return copy;
+    }
+
+    /// Whether `key` has a value in `category`.
+    pub fn contains(self: *Settings, key: []const u8) bool {
+        self.flush();
+        var store = self.openStore() catch return false;
+        defer store.deinit();
+        return store.contains(self.category.getUntracked(), key);
+    }
+
+    /// Sets `key` in `category` to `text`, at once (and a property it
+    /// keeps under that key to it, if it is a value of its kind).
+    pub fn setValue(self: *Settings, key: []const u8, text: []const u8) void {
+        self.flush();
+        for (self.entries.items) |e| if (std.mem.eql(u8, e.key, key)) self.setFrom(e, .{ .text = text });
+        var store = self.openStore() catch return;
+        defer store.deinit();
+        store.setText(self.category.getUntracked(), key, text) catch |err|
+            return log.warn("cannot set the setting '{s}': {t}", .{ key, err });
+        self.finish(&store);
+    }
+
+    /// Removes `key` from `category`, and the group of that name with
+    /// everything in it ("": everything in `category`). The properties it
+    /// keeps stay as they are (and are written again when they change).
+    pub fn remove(self: *Settings, key: []const u8) void {
+        self.flush();
+        var store = self.openStore() catch return;
+        defer store.deinit();
+        store.remove(self.category.getUntracked(), key) catch |err|
+            return log.warn("cannot remove the setting '{s}': {t}", .{ key, err });
+        self.finish(&store);
+    }
+
+    /// Writes changes waiting for the timer.
+    fn flush(self: *Settings) void {
+        if (self.save_timer.isRunning()) self.save();
+    }
+
+    /// Writes the store, then lists what it holds.
+    fn finish(self: *Settings, store: *Store) void {
+        store.sync() catch |err|
+            log.warn("cannot write the settings to '{s}': {t}", .{ store.location() orelse "", err });
+        self.refreshLists(store);
+    }
+
     /// Reads the saved values into the properties, then watches them.
     fn begin(self: *Settings) void {
         if (self.tracking) {
@@ -132,14 +512,11 @@ pub const Settings = struct {
         var arena: std.heap.ArenaAllocator = .init(self.gpa);
         defer arena.deinit();
         const a = arena.allocator();
-        if (has_registry and self.usesRegistry()) {
-            if (self.registryKey(a)) |key| self.readRegistry(a, key);
-        } else if (self.filePath(a)) |path| if (readFile(a, path)) |text| {
-            var ini = Ini.parse(a, text) catch return;
-            if (ini.section(self.category.getUntracked())) |sec| for (self.entries.items) |e| {
-                if (sec.value(e.key)) |v| self.setFromText(e, v);
-            };
-        };
+        var store = self.openStore() catch return;
+        defer store.deinit();
+        const category = self.category.getUntracked();
+        for (self.entries.items) |e| if (store.get(a, category, e.key)) |v| self.setFrom(e, v);
+        self.refreshLists(&store);
         self.gpa.free(self.last);
         self.last = self.serialize(self.gpa) catch &.{};
         self.tracker.init(self.gpa, self, hashValues, changed);
@@ -162,33 +539,45 @@ pub const Settings = struct {
         self.save_timer.start(.single_shot, save_delay_ms, self, save);
     }
 
-    /// Writes its values, if they changed, into the file (keeping what
-    /// else it holds).
+    /// Writes its values, if they changed (keeping what else is there).
     pub fn save(self: *Settings) void {
         self.save_timer.stop();
         const now = self.serialize(self.gpa) catch return;
         if (std.mem.eql(u8, now, self.last)) return self.gpa.free(now);
         self.gpa.free(self.last);
         self.last = now;
+        var store = self.openStore() catch return;
+        defer store.deinit();
+        self.writeEntries(&store) catch |err|
+            return log.warn("cannot write the settings to '{s}': {t}", .{ store.location() orelse "", err });
+        self.finish(&store);
+    }
+
+    fn writeEntries(self: *Settings, store: *Store) !void {
+        const category = self.category.getUntracked();
+        var arena: std.heap.ArenaAllocator = .init(self.gpa);
+        defer arena.deinit();
+        for (self.entries.items) |e| switch (e.kind) {
+            .int => try store.setInt(category, e.key, prop(.int, e).getUntracked()),
+            .duration => try store.setInt(category, e.key, prop(.duration, e).getUntracked()),
+            .bool => try store.setBool(category, e.key, prop(.bool, e).getUntracked()),
+            .string => try store.setText(category, e.key, prop(.string, e).getUntracked()),
+            .float, .color => {
+                var out: std.Io.Writer.Allocating = .init(arena.allocator());
+                try writeValue(&out.writer, e);
+                try store.setText(category, e.key, out.written());
+            },
+        };
+    }
+
+    /// Lists the keys and groups in `category` (if they changed).
+    fn refreshLists(self: *Settings, store: *Store) void {
         var arena: std.heap.ArenaAllocator = .init(self.gpa);
         defer arena.deinit();
         const a = arena.allocator();
-        if (has_registry and self.usesRegistry()) {
-            const key = self.registryKey(a) orelse return;
-            self.writeRegistry(a, key) catch |err|
-                log.warn("cannot write the settings to the registry key '{s}': {t}", .{ key, err });
-            return;
-        }
-        const path = self.filePath(a) orelse return;
-        var ini = Ini.parse(a, readFile(a, path) orelse "") catch return;
-        const sec = ini.sectionOrNew(a, self.category.getUntracked()) catch return;
-        var lines = std.mem.splitScalar(u8, now, '\n');
-        for (self.entries.items) |e| {
-            const l = lines.next() orelse break;
-            sec.set(a, e.key, l) catch return;
-        }
-        writeFile(a, path, ini.write(a) catch return) catch |err|
-            log.warn("cannot write the settings to '{s}': {t}", .{ path, err });
+        const category = self.category.getUntracked();
+        replaceAll(self.gpa, &self.key_list, store.keys(a, category) catch return);
+        replaceAll(self.gpa, &self.group_list, store.groups(a, category) catch return);
     }
 
     /// Its values, one line `key=value` each, in the order added.
@@ -199,11 +588,15 @@ pub const Settings = struct {
         for (self.entries.items, 0..) |e, i| {
             if (i > 0) w.writeByte('\n') catch return error.OutOfMemory;
             w.print("{s}=", .{e.key}) catch return error.OutOfMemory;
-            writeValue(w, e) catch return error.OutOfMemory;
+            switch (e.kind) {
+                .string => writeEscaped(w, prop(.string, e).getUntracked()) catch return error.OutOfMemory,
+                else => writeValue(w, e) catch return error.OutOfMemory,
+            }
         }
         return out.toOwnedSlice();
     }
 
+    /// Its value as text (strings as they are).
     fn writeValue(w: *std.Io.Writer, e: Entry) std.Io.Writer.Error!void {
         switch (e.kind) {
             .int => try w.print("{d}", .{prop(.int, e).getUntracked()}),
@@ -214,38 +607,47 @@ pub const Settings = struct {
                 const c = prop(.color, e).getUntracked();
                 try w.print("#{x:0>2}{x:0>2}{x:0>2}{x:0>2}", .{ c.r, c.g, c.b, c.a });
             },
-            .string => for (prop(.string, e).getUntracked()) |ch| switch (ch) {
-                '\\' => try w.writeAll("\\\\"),
-                '\n' => try w.writeAll("\\n"),
-                '\r' => try w.writeAll("\\r"),
-                '\t' => try w.writeAll("\\t"),
-                else => try w.writeByte(ch),
-            },
+            .string => try w.writeAll(prop(.string, e).getUntracked()),
         }
     }
 
-    /// Sets `e`'s property from its saved text (left as it is if that is
+    /// Sets `e`'s property from a value read (left as it is if that is
     /// not a value of its kind).
-    fn setFromText(self: *Settings, e: Entry, text: []const u8) void {
-        switch (e.kind) {
-            .int => prop(.int, e).set(std.fmt.parseInt(i32, text, 10) catch return),
-            .float => prop(.float, e).set(std.fmt.parseFloat(f32, text) catch return),
-            .duration => prop(.duration, e).set(std.fmt.parseInt(i64, text, 10) catch return),
-            .bool => prop(.bool, e).set(if (std.mem.eql(u8, text, "true")) true else if (std.mem.eql(u8, text, "false")) false else return),
-            .color => {
-                if (text.len != 9 or text[0] != '#') return;
-                const v = std.fmt.parseInt(u32, text[1..], 16) catch return;
-                prop(.color, e).set(.{ .r = @truncate(v >> 24), .g = @truncate(v >> 16), .b = @truncate(v >> 8), .a = @truncate(v) });
+    fn setFrom(self: *Settings, e: Entry, v: Value) void {
+        switch (v) {
+            .number => |n| switch (e.kind) {
+                .int => prop(.int, e).set(@truncate(n)),
+                .duration => prop(.duration, e).set(n),
+                .bool => prop(.bool, e).set(n != 0),
+                .float => prop(.float, e).set(@floatFromInt(n)),
+                .string => {
+                    const s = std.fmt.allocPrint(self.gpa, "{d}", .{n}) catch return;
+                    self.keepString(e, s);
+                },
+                .color => {},
             },
-            .string => {
-                const s = unescape(self.gpa, text) catch return;
-                self.strings.append(self.gpa, s) catch return self.gpa.free(s);
-                prop(.string, e).set(s);
+            .text => |text| switch (e.kind) {
+                .int => prop(.int, e).set(std.fmt.parseInt(i32, text, 10) catch return),
+                .float => prop(.float, e).set(std.fmt.parseFloat(f32, text) catch return),
+                .duration => prop(.duration, e).set(std.fmt.parseInt(i64, text, 10) catch return),
+                .bool => prop(.bool, e).set(if (std.mem.eql(u8, text, "true") or std.mem.eql(u8, text, "1")) true else if (std.mem.eql(u8, text, "false") or std.mem.eql(u8, text, "0")) false else return),
+                .color => {
+                    if (text.len != 9 or text[0] != '#') return;
+                    const c = std.fmt.parseInt(u32, text[1..], 16) catch return;
+                    prop(.color, e).set(.{ .r = @truncate(c >> 24), .g = @truncate(c >> 16), .b = @truncate(c >> 8), .a = @truncate(c) });
+                },
+                .string => self.keepString(e, self.gpa.dupe(u8, text) catch return),
             },
         }
     }
 
-    fn Value(comptime k: Kind) type {
+    /// Sets `e`'s string property to `s` (owned from now on).
+    fn keepString(self: *Settings, e: Entry, s: []u8) void {
+        self.strings.append(self.gpa, s) catch return self.gpa.free(s);
+        prop(.string, e).set(s);
+    }
+
+    fn Field(comptime k: Kind) type {
         return switch (k) {
             .int => i32,
             .float => f32,
@@ -256,182 +658,51 @@ pub const Settings = struct {
         };
     }
 
-    fn prop(comptime k: Kind, e: Entry) *Property(Value(k)) {
+    fn prop(comptime k: Kind, e: Entry) *Property(Field(k)) {
         return @ptrCast(@alignCast(e.ptr));
-    }
-
-    /// Where its file is; null where there are no files (and in tests,
-    /// unless it is given: they leave the user's alone).
-    fn filePath(self: *Settings, a: Allocator) ?[]const u8 {
-        if (!paths.has_files) return null;
-        const file = self.file.getUntracked();
-        if (file.len > 0) return file;
-        if (builtin.is_test) return null;
-        const dir = paths.get(a, .app_config) catch return null;
-        if (dir.len == 0) return null;
-        return std.fs.path.join(a, &.{ dir, "settings.ini" }) catch null;
-    }
-
-    /// Callers test `has_registry` first, so that the registry's code is
-    /// left out elsewhere.
-    fn usesRegistry(self: *Settings) bool {
-        return self.format.getUntracked() == .registry;
-    }
-
-    /// Its key under `HKEY_CURRENT_USER`, with `\` between keys; null in
-    /// tests unless `file` is given.
-    fn registryKey(self: *Settings, a: Allocator) ?[]const u8 {
-        const file = self.file.getUntracked();
-        if (file.len == 0 and builtin.is_test) return null;
-        const base = if (file.len > 0) file else std.mem.concat(a, u8, &.{ "Software\\", paths.applicationName() }) catch return null;
-        const category = self.category.getUntracked();
-        const key = if (category.len > 0) std.mem.concat(a, u8, &.{ base, "\\", category }) catch return null else a.dupe(u8, base) catch return null;
-        std.mem.replaceScalar(u8, key, '/', '\\');
-        return key;
-    }
-
-    /// Reads its values from the registry: numbers from DWORD and QWORD
-    /// values, the rest from strings.
-    fn readRegistry(self: *Settings, a: Allocator, key: []const u8) void {
-        var k = registry.open(a, key) orelse return;
-        defer k.close();
-        for (self.entries.items) |e| {
-            const v = k.get(a, e.key) orelse continue;
-            switch (v) {
-                .number => |n| switch (e.kind) {
-                    .int => prop(.int, e).set(@bitCast(@as(u32, @truncate(n)))),
-                    .duration => prop(.duration, e).set(@bitCast(n)),
-                    .bool => prop(.bool, e).set(n != 0),
-                    .float => prop(.float, e).set(@floatFromInt(@as(i64, @bitCast(n)))),
-                    else => {},
-                },
-                .text => |t| if (e.kind == .string) {
-                    const s = self.gpa.dupe(u8, t) catch continue;
-                    self.strings.append(self.gpa, s) catch {
-                        self.gpa.free(s);
-                        continue;
-                    };
-                    prop(.string, e).set(s);
-                } else self.setFromText(e, t),
-            }
-        }
-    }
-
-    /// Writes its values into the registry: ints and bools as DWORDs,
-    /// durations as QWORDs, the rest as strings.
-    fn writeRegistry(self: *Settings, a: Allocator, key: []const u8) !void {
-        var k = try registry.create(a, key);
-        defer k.close();
-        for (self.entries.items) |e| switch (e.kind) {
-            .int => try k.setDword(a, e.key, @bitCast(prop(.int, e).getUntracked())),
-            .bool => try k.setDword(a, e.key, @intFromBool(prop(.bool, e).getUntracked())),
-            .duration => try k.setQword(a, e.key, @bitCast(prop(.duration, e).getUntracked())),
-            .string => try k.setString(a, e.key, prop(.string, e).getUntracked()),
-            .float, .color => {
-                var out: std.Io.Writer.Allocating = .init(a);
-                try writeValue(&out.writer, e);
-                try k.setString(a, e.key, out.written());
-            },
-        };
     }
 
     const vtable: item_mod.ItemVTable = .{ .name = "Settings" };
 };
 
-/// The registry under `HKEY_CURRENT_USER` (Windows only).
-const registry = struct {
-    const hkey_current_user: usize = 0x80000001;
-    const key_read: u32 = 0x20019;
-    const key_write: u32 = 0x20006;
-    const reg_sz: u32 = 1;
-    const reg_expand_sz: u32 = 2;
-    const reg_dword: u32 = 4;
-    const reg_qword: u32 = 11;
+fn freeAll(gpa: Allocator, list: *model.VecModel([]const u8)) void {
+    for (list.items.items) |s| gpa.free(s);
+}
 
-    // The predefined keys are not aligned pointers: keys are numbers here.
-    extern "advapi32" fn RegOpenKeyExW(key: usize, sub_key: [*:0]const u16, options: u32, sam: u32, result: *usize) callconv(.winapi) i32;
-    extern "advapi32" fn RegCreateKeyExW(key: usize, sub_key: [*:0]const u16, reserved: u32, class: ?[*:0]const u16, options: u32, sam: u32, security: ?*anyopaque, result: *usize, disposition: ?*u32) callconv(.winapi) i32;
-    extern "advapi32" fn RegQueryValueExW(key: usize, name: [*:0]const u16, reserved: ?*u32, kind: ?*u32, data: ?[*]u8, size: ?*u32) callconv(.winapi) i32;
-    extern "advapi32" fn RegSetValueExW(key: usize, name: [*:0]const u16, reserved: u32, kind: u32, data: [*]const u8, size: u32) callconv(.winapi) i32;
-    extern "advapi32" fn RegCloseKey(key: usize) callconv(.winapi) i32;
-    extern "advapi32" fn RegDeleteTreeW(key: usize, sub_key: ?[*:0]const u16) callconv(.winapi) i32;
+/// Sets `list` to copies of `names`, if they differ.
+fn replaceAll(gpa: Allocator, list: *model.VecModel([]const u8), names: []const []const u8) void {
+    if (names.len == list.items.items.len) {
+        for (names, list.items.items) |n, o| {
+            if (!std.mem.eql(u8, n, o)) break;
+        } else return;
+    }
+    var copies: std.ArrayList([]const u8) = .empty;
+    defer copies.deinit(gpa);
+    for (names) |n| {
+        const copy = gpa.dupe(u8, n) catch break;
+        copies.append(gpa, copy) catch {
+            gpa.free(copy);
+            break;
+        };
+    }
+    const old = gpa.dupe([]const u8, list.items.items) catch return for (copies.items) |c| gpa.free(c);
+    defer {
+        for (old) |s| gpa.free(s);
+        gpa.free(old);
+    }
+    list.setAll(copies.items) catch {};
+}
 
-    const Value = union(enum) { number: u64, text: []const u8 };
-
-    const Key = struct {
-        handle: usize,
-
-        fn close(k: *Key) void {
-            _ = RegCloseKey(k.handle);
-        }
-
-        /// A value as a number (DWORD, QWORD) or as text (strings).
-        fn get(k: *Key, a: Allocator, name: []const u8) ?Value {
-            const wname = std.unicode.utf8ToUtf16LeAllocZ(a, name) catch return null;
-            var kind: u32 = 0;
-            var size: u32 = 0;
-            if (RegQueryValueExW(k.handle, wname, null, &kind, null, &size) != 0) return null;
-            const data = a.alignedAlloc(u8, .of(u16), size) catch return null;
-            if (RegQueryValueExW(k.handle, wname, null, &kind, data.ptr, &size) != 0) return null;
-            const bytes = data[0..@min(size, data.len)];
-            return switch (kind) {
-                reg_dword => if (bytes.len >= 4) .{ .number = std.mem.readInt(u32, bytes[0..4], .little) } else null,
-                reg_qword => if (bytes.len >= 8) .{ .number = std.mem.readInt(u64, bytes[0..8], .little) } else null,
-                reg_sz, reg_expand_sz => blk: {
-                    var units: []const u16 = @alignCast(std.mem.bytesAsSlice(u16, bytes[0 .. bytes.len & ~@as(usize, 1)]));
-                    while (units.len > 0 and units[units.len - 1] == 0) units = units[0 .. units.len - 1];
-                    break :blk .{ .text = std.unicode.utf16LeToUtf8Alloc(a, units) catch return null };
-                },
-                else => null,
-            };
-        }
-
-        fn set(k: *Key, a: Allocator, name: []const u8, kind: u32, data: []const u8) !void {
-            const wname = try std.unicode.utf8ToUtf16LeAllocZ(a, name);
-            if (RegSetValueExW(k.handle, wname, 0, kind, data.ptr, @intCast(data.len)) != 0) return error.RegistryWriteFailed;
-        }
-
-        fn setDword(k: *Key, a: Allocator, name: []const u8, v: u32) !void {
-            var b: [4]u8 = undefined;
-            std.mem.writeInt(u32, &b, v, .little);
-            try k.set(a, name, reg_dword, &b);
-        }
-
-        fn setQword(k: *Key, a: Allocator, name: []const u8, v: u64) !void {
-            var b: [8]u8 = undefined;
-            std.mem.writeInt(u64, &b, v, .little);
-            try k.set(a, name, reg_qword, &b);
-        }
-
-        fn setString(k: *Key, a: Allocator, name: []const u8, v: []const u8) !void {
-            const w = try std.unicode.utf8ToUtf16LeAllocZ(a, v);
-            // With its terminating zero.
-            try k.set(a, name, reg_sz, std.mem.sliceAsBytes(w.ptr[0 .. w.len + 1]));
-        }
+/// `text` as an INI value: backslashes and line breaks escaped.
+fn writeEscaped(w: *std.Io.Writer, text: []const u8) std.Io.Writer.Error!void {
+    for (text) |ch| switch (ch) {
+        '\\' => try w.writeAll("\\\\"),
+        '\n' => try w.writeAll("\\n"),
+        '\r' => try w.writeAll("\\r"),
+        '\t' => try w.writeAll("\\t"),
+        else => try w.writeByte(ch),
     };
-
-    /// `path` (keys separated by `\`) for reading; null if it is not there.
-    fn open(a: Allocator, path: []const u8) ?Key {
-        const wpath = std.unicode.utf8ToUtf16LeAllocZ(a, path) catch return null;
-        var h: usize = 0;
-        if (RegOpenKeyExW(hkey_current_user, wpath, 0, key_read, &h) != 0) return null;
-        return .{ .handle = h };
-    }
-
-    /// `path` for writing, made if needed.
-    fn create(a: Allocator, path: []const u8) !Key {
-        const wpath = try std.unicode.utf8ToUtf16LeAllocZ(a, path);
-        var h: usize = 0;
-        if (RegCreateKeyExW(hkey_current_user, wpath, 0, null, 0, key_write, null, &h, null) != 0) return error.RegistryWriteFailed;
-        return .{ .handle = h };
-    }
-
-    /// Deletes `path` and everything in it.
-    fn deleteTree(a: Allocator, path: []const u8) void {
-        const wpath = std.unicode.utf8ToUtf16LeAllocZ(a, path) catch return;
-        _ = RegDeleteTreeW(hkey_current_user, wpath);
-    }
-};
+}
 
 fn unescape(gpa: Allocator, text: []const u8) Allocator.Error![]u8 {
     var out: std.ArrayList(u8) = .empty;
@@ -494,6 +765,15 @@ const Ini = struct {
             return null;
         }
 
+        /// Removes the line of `key`; false if there is none.
+        fn remove(s: *Section, key: []const u8) bool {
+            for (s.lines.items, 0..) |l, i| if (l.key) |k| if (std.mem.eql(u8, k, key)) {
+                _ = s.lines.orderedRemove(i);
+                return true;
+            };
+            return false;
+        }
+
         /// Sets the line of `key` to `line` (`key=value`).
         fn set(s: *Section, a: Allocator, key: []const u8, line: []const u8) Allocator.Error!void {
             for (s.lines.items) |*l| if (l.key) |k| if (std.mem.eql(u8, k, key)) {
@@ -526,6 +806,30 @@ const Ini = struct {
             try sec.lines.append(a, .{ .key = key, .text = l });
         }
         return ini;
+    }
+
+    /// Removes the section `name` and those in it ("": every value).
+    fn removeGroup(ini: *Ini, name: []const u8) bool {
+        var removed = false;
+        if (name.len == 0) {
+            const top = &ini.sections.items[0];
+            var i: usize = 0;
+            while (i < top.lines.items.len) {
+                if (top.lines.items[i].key != null) {
+                    _ = top.lines.orderedRemove(i);
+                    removed = true;
+                } else i += 1;
+            }
+        }
+        var i: usize = 1;
+        while (i < ini.sections.items.len) {
+            const n = ini.sections.items[i].name;
+            if (name.len == 0 or std.mem.eql(u8, n, name) or (n.len > name.len and std.mem.startsWith(u8, n, name) and n[name.len] == '/')) {
+                _ = ini.sections.orderedRemove(i);
+                removed = true;
+            } else i += 1;
+        }
+        return removed;
     }
 
     fn section(ini: *Ini, name: []const u8) ?*Section {
@@ -696,11 +1000,122 @@ test "settings: values that are not of their kind leave the default" {
     try testing.expectEqual(@as(f32, 2), v.zoom.get());
 }
 
+test "settings store: keys and groups in an INI file, nested, removed" {
+    if (!paths.has_files) return error.SkipZigTest;
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var t: std.Io.Threaded = .init_single_threaded;
+    try tmp.dir.writeFile(t.io(), .{ .sub_path = "s.ini", .data = "top=1\n; a note\n[view]\nzoom = 2\n[view/window]\nwidth=640\n[view/window/frame]\nx=1\n[other]\nk=v\n" });
+    const dir = try tmp.dir.realPathFileAlloc(t.io(), ".", testing.allocator);
+    defer testing.allocator.free(dir);
+    const path = try std.fs.path.join(testing.allocator, &.{ dir, "s.ini" });
+    defer testing.allocator.free(path);
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    var s = try Store.open(testing.allocator, .ini, path);
+    defer s.deinit();
+    try testing.expectEqualStrings("2", s.getText(a, "view", "zoom").?);
+    try testing.expectEqualStrings("640", s.getText(a, "view", "window/width").?);
+    try testing.expectEqualStrings("640", s.getText(a, "", "view/window/width").?);
+    try testing.expectEqualStrings("1", s.getText(a, "/", "top").?);
+    try testing.expect(s.get(a, "view", "width") == null);
+    try testing.expect(s.contains("view/window", "width"));
+    try testing.expect(!s.contains("view", "nope"));
+
+    try testing.expectEqualDeep(&[_][]const u8{"top"}, try s.keys(a, ""));
+    try testing.expectEqualDeep(&[_][]const u8{"zoom"}, try s.keys(a, "view"));
+    try testing.expectEqualDeep(&[_][]const u8{ "view", "other" }, try s.groups(a, ""));
+    try testing.expectEqualDeep(&[_][]const u8{"window"}, try s.groups(a, "view"));
+    try testing.expectEqualDeep(&[_][]const u8{"frame"}, try s.groups(a, "view/window"));
+    try testing.expectEqual(@as(usize, 0), (try s.groups(a, "other")).len);
+
+    try s.setText("view", "title", "a\nb");
+    try s.setInt("view", "new/n", -4);
+    try s.setBool("", "on", true);
+    try testing.expectEqualStrings("a\nb", s.getText(a, "view", "title").?);
+    try testing.expectEqualDeep(&[_][]const u8{ "window", "new" }, try s.groups(a, "view"));
+    // A key and a group of that name.
+    try s.remove("view", "window");
+    try s.remove("", "other/k");
+    try s.sync();
+    const text = try tmp.dir.readFileAlloc(t.io(), "s.ini", a, .unlimited);
+    try testing.expectEqualStrings("top=1\n; a note\non=true\n\n[view]\nzoom = 2\ntitle=a\\nb\n\n[other]\n\n[view/new]\nn=-4\n", text);
+
+    // Everything in a group, then everything.
+    try s.remove("view", "");
+    try testing.expectEqualDeep(&[_][]const u8{"other"}, try s.groups(a, ""));
+    try s.remove("", "");
+    try testing.expectEqual(@as(usize, 0), (try s.keys(a, "")).len);
+    try testing.expectEqual(@as(usize, 0), (try s.groups(a, "")).len);
+}
+
+test "settings: values by key beside the properties, keys and groups listed" {
+    if (!paths.has_files) return error.SkipZigTest;
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var t: std.Io.Threaded = .init_single_threaded;
+    try tmp.dir.writeFile(t.io(), .{ .sub_path = "app.ini", .data = "[view]\nrecent=a.txt\n[view/columns]\nname=120\n" });
+    const dir = try tmp.dir.realPathFileAlloc(t.io(), ".", testing.allocator);
+    defer testing.allocator.free(dir);
+    const path = try std.fs.path.join(testing.allocator, &.{ dir, "app.ini" });
+    defer testing.allocator.free(path);
+
+    var v: TestValues = .{};
+    defer v.deinit();
+    var s: Settings = undefined;
+    s.init(testing.allocator);
+    defer s.deinit();
+    s.file.set(path);
+    s.category.set("view");
+    try s.add(i32, "count", &v.count);
+    properties.runChangeHandlers();
+
+    try testing.expectEqualStrings("a.txt", s.value("recent"));
+    try testing.expectEqualStrings("120", s.value("columns/name"));
+    try testing.expectEqualStrings("", s.value("nope"));
+    try testing.expect(s.contains("recent"));
+    try testing.expect(!s.contains("count"));
+    try testing.expectEqual(@as(usize, 1), s.all_keys.get().rowCount());
+    try testing.expectEqualStrings("columns", s.child_groups.get().rowData(0).?);
+
+    // A change waiting for the timer is written before a value is read.
+    v.count.set(5);
+    properties.runChangeHandlers();
+    try testing.expectEqualStrings("5", s.value("count"));
+    try testing.expectEqual(@as(usize, 2), s.all_keys.get().rowCount());
+
+    // Setting a kept property's key sets the property.
+    s.setValue("count", "9");
+    try testing.expectEqual(@as(i32, 9), v.count.get());
+    s.setValue("columns/size", "80");
+    s.setValue("recent", "b.txt");
+    s.remove("columns/name");
+    properties.runChangeHandlers();
+    try testing.expect(!s.save_timer.isRunning() or blk: {
+        s.save();
+        break :blk true;
+    });
+    const text = try tmp.dir.readFileAlloc(t.io(), "app.ini", testing.allocator, .unlimited);
+    defer testing.allocator.free(text);
+    try testing.expectEqualStrings("[view]\nrecent=b.txt\ncount=9\n\n[view/columns]\nsize=80\n", text);
+
+    s.remove("columns");
+    try testing.expectEqual(@as(usize, 0), s.child_groups.get().rowCount());
+    s.remove("");
+    try testing.expectEqual(@as(usize, 0), s.all_keys.get().rowCount());
+    try testing.expectEqual(@as(i32, 9), v.count.get());
+}
+
 test "settings: kept in the registry on Windows, read back by the next run" {
     if (!has_registry) return error.SkipZigTest;
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
     const key = "Software\\zigulee-test-settings";
-    registry.deleteTree(testing.allocator, key);
-    defer registry.deleteTree(testing.allocator, key);
+    _ = registry.deleteTree(a, key);
+    defer _ = registry.deleteTree(a, key);
 
     {
         var v: TestValues = .{};
@@ -723,14 +1138,23 @@ test "settings: kept in the registry on Windows, read back by the next run" {
         v.wait.set(1 << 40);
         properties.runChangeHandlers();
         s.save();
+        s.setValue("columns/name", "120");
 
-        var arena: std.heap.ArenaAllocator = .init(testing.allocator);
-        defer arena.deinit();
-        var k = registry.open(arena.allocator(), key ++ "\\view").?;
+        const k = registry.open(a, key ++ "\\view").?;
         defer k.close();
-        try testing.expectEqual(@as(u64, @as(u32, @bitCast(@as(i32, -7)))), k.get(arena.allocator(), "count").?.number);
-        try testing.expectEqual(@as(u64, 1), k.get(arena.allocator(), "dark").?.number);
-        try testing.expectEqualStrings("#abcdef80", k.get(arena.allocator(), "tint").?.text);
+        try testing.expectEqual(@as(i64, -7), k.get(a, "count").?.number);
+        try testing.expectEqual(@as(i64, 1), k.get(a, "dark").?.number);
+        try testing.expectEqual(@as(i64, 1 << 40), k.get(a, "wait").?.number);
+        try testing.expectEqualStrings("#abcdef80", k.get(a, "tint").?.text);
+        try testing.expectEqual(@as(usize, 6), s.all_keys.get().rowCount());
+        try testing.expectEqualStrings("columns", s.child_groups.get().rowData(0).?);
+        try testing.expectEqualStrings("-7", s.value("count"));
+        try testing.expectEqualStrings("120", s.value("columns/name"));
+        s.remove("columns");
+        try testing.expectEqual(@as(usize, 0), s.child_groups.get().rowCount());
+        s.remove("zoom");
+        try testing.expect(!s.contains("zoom"));
+        s.setValue("zoom", "0.25");
     }
 
     var v: TestValues = .{};
@@ -750,4 +1174,8 @@ test "settings: kept in the registry on Windows, read back by the next run" {
     try testing.expectEqual(Color{ .r = 0xab, .g = 0xcd, .b = 0xef, .a = 0x80 }, v.tint.get());
     try testing.expectEqual(@as(i64, 1 << 40), v.wait.get());
     try testing.expect(!s.save_timer.isRunning());
+}
+
+test {
+    _ = registry;
 }

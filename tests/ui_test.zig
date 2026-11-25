@@ -2901,6 +2901,20 @@ test "settings: kept in a file, read back by the next run; standard paths" {
     try testing.expectEqual(@as(i32, 1), app.clicks.get());
     try testing.expect(app.store.dark.get());
     try testing.expectEqualStrings("plain", app.store.root.name.get());
+
+    // Values by key, keys and groups.
+    try testing.expectEqual(@as(i32, 5), app.keys.get());
+    try testing.expectEqual(@as(i32, 0), app.groups.get());
+    app.invoke_remember("notes.txt");
+    zigulee.runChangeHandlers();
+    try testing.expectEqualStrings("notes.txt", app.recent.get());
+    try testing.expect(app.has_recent.get());
+    try testing.expectEqual(@as(i32, 1), app.groups.get());
+    app.invoke_forget();
+    zigulee.runChangeHandlers();
+    try testing.expect(!app.has_recent.get());
+    try testing.expectEqual(@as(i32, 0), app.groups.get());
+    try testing.expectEqual(@as(i32, 5), app.keys.get());
 }
 
 test "gallery: charts hovered and clicked by index, with values from functions" {

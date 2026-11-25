@@ -685,6 +685,10 @@ test "settings: a component inheriting Settings keeps its properties" {
         \\export component App inherits Window {
         \\    var in <string> file;
         \\    var in-out <int> clicks;
+        \\    var out <string> got;
+        \\    var out <int> groups: store.child-groups.length;
+        \\    public function put(key: string, text: string) { store.set-value(key, text); root.got = store.value(key); }
+        \\    public function drop(key: string) -> bool { store.remove(key); return store.contains(key); }
         \\    store := MoreSettings { file: root.file; count <=> root.clicks; }
         \\    TouchArea { clicked => { root.clicks += 1; store.dark = true; store.name = "a\nb"; } }
         \\}
@@ -712,6 +716,19 @@ test "settings: a component inheriting Settings keeps its properties" {
     app.property("file").?.set(.{ .string = path });
     zigulee.runChangeHandlers();
     try testing.expectEqual(@as(i32, 1), app.property("clicks").?.get().int);
+
+    // Values by key, groups listed.
+    _ = app.call("put", &.{ .{ .string = "recent/first" }, .{ .string = "notes.txt" } }, gpa);
+    zigulee.runChangeHandlers();
+    try testing.expectEqualStrings("notes.txt", app.property("got").?.get().string);
+    try testing.expectEqual(@as(i32, 1), app.property("groups").?.get().int);
+    // A kept property's key sets it.
+    _ = app.call("put", &.{ .{ .string = "count" }, .{ .string = "4" } }, gpa);
+    zigulee.runChangeHandlers();
+    try testing.expectEqual(@as(i32, 4), app.property("clicks").?.get().int);
+    try testing.expect(!app.call("drop", &.{.{ .string = "recent" }}, gpa).?.bool);
+    zigulee.runChangeHandlers();
+    try testing.expectEqual(@as(i32, 0), app.property("groups").?.get().int);
 }
 
 test "settings: only some types can be kept" {

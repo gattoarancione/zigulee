@@ -553,7 +553,8 @@ pub const BuiltinMeta = struct {
     callback: *const fn (*anyopaque, []const u8) ?CallbackRef,
     /// Calls a function (`focus()`, `push(page)`) with its arguments;
     /// false if there is none by that name.
-    function: *const fn (*anyopaque, []const u8, []const Value) bool,
+    /// Calls the function `name`: what it returns, null if there is none.
+    function: *const fn (*anyopaque, []const u8, []const Value) ?Value,
 };
 
 fn metaFor(comptime b: *const types.Builtin) BuiltinMeta {
@@ -621,7 +622,7 @@ fn metaFor(comptime b: *const types.Builtin) BuiltinMeta {
             };
             return null;
         }
-        fn function(p: *anyopaque, name: []const u8, values: []const Value) bool {
+        fn function(p: *anyopaque, name: []const u8, values: []const Value) ?Value {
             inline for (b.functions) |f| if (std.mem.eql(u8, f.name, name)) {
                 const func = @field(T, f.zig);
                 var args: std.meta.ArgsTuple(@TypeOf(func)) = undefined;
@@ -629,10 +630,11 @@ fn metaFor(comptime b: *const types.Builtin) BuiltinMeta {
                 inline for (1..args.len) |i| {
                     args[i] = toZig(@TypeOf(args[i]), if (i - 1 < values.len) values[i - 1] else .void);
                 }
-                @call(.auto, func, args);
-                return true;
+                const result = @call(.auto, func, args);
+                if (@TypeOf(result) == void) return .void;
+                return fromZig(@TypeOf(result), result, f.ret);
             };
-            return false;
+            return null;
         }
     };
     return .{
@@ -699,7 +701,7 @@ test "built-in properties, callbacks and functions by name" {
     const r = key_pressed.call(&.{.{ .key_event = .{ .text = "q" } }});
     try testing.expectEqualStrings("q", h.seen);
     try testing.expectEqualStrings("accept", r.enumeration.zigTag());
-    try testing.expect(fs_meta.function(fs, "focus", &.{}));
+    try testing.expect(fs_meta.function(fs, "focus", &.{}) != null);
 }
 
 test "declared properties link with built-in ones" {

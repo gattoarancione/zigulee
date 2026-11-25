@@ -145,7 +145,13 @@ fn elements(arena: Allocator) ![]const u8 {
         }
         if (b.functions.len > 0) {
             try w.writeAll("\nFunctions:");
-            for (b.functions, 0..) |f, i| try w.print("{s} `{s}()`", .{ if (i > 0) "," else "", f.name });
+            for (b.functions, 0..) |f, i| {
+                try w.print("{s} `{s}(", .{ if (i > 0) "," else "", f.name });
+                for (f.params, 0..) |t, j| try w.print("{s}{s}", .{ if (j > 0) ", " else "", t.name() });
+                try w.writeAll(")");
+                if (f.ret != .void) try w.print(" -> {s}", .{f.ret.name()});
+                try w.writeAll("`");
+            }
             try w.writeAll("\n");
         }
     }

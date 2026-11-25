@@ -1061,8 +1061,9 @@ application.
 
 On Windows they can go in the registry instead, as `QSettings` keeps them:
 with `format: registry`, under `HKEY_CURRENT_USER\Software\<app>`, a key
-per category (`HKEY_CURRENT_USER\Software\<app>\editor` above). ints and
-bools are DWORD values, durations QWORD values, the rest strings. `file`
+per category (`HKEY_CURRENT_USER\Software\<app>\editor` above). ints,
+bools and durations are DWORD values (QWORD ones when they do not fit),
+the rest strings. `file`
 names another key under `HKEY_CURRENT_USER` (`/` separates keys too). On
 other systems `registry` still means the INI file, so one component serves
 everywhere:
@@ -1075,6 +1076,31 @@ component EditorSettings inherits Settings {
     var in-out <bool> wrap: true;
 }
 ```
+
+Values it does not declare are reached by key, in `category`; `/` reaches
+into groups (sections `editor/recent` of the INI file, keys
+`...\editor\recent` in the registry). `value(key)` gives one as text (""
+if there is none: numbers in the registry in decimal), `set-value(key,
+text)` sets it at once (and the property kept under that key, if any),
+`contains(key)` tells whether there is one, and `remove(key)` removes it
+and the group of that name (`remove("")` empties `category`). `all-keys`
+and `child-groups` list the keys and groups in `category`:
+
+```slint
+component Editor inherits Window {
+    prefs := EditorSettings {}
+    function open-file(path: string) {
+        prefs.set-value("recent/first", path);
+    }
+    for group in prefs.child-groups : Text { text: group; }
+}
+```
+
+From Zig, `zigulee.core.settings.Store` reads and writes the same values
+(groups, keys, `keys` and `groups` listed, `remove`, `sync` for the INI
+file), and `zigulee.core.registry` opens any key under
+`HKEY_CURRENT_USER`: values read, written and deleted, subkeys and value
+names listed.
 
 `std-widgets.zge` has two kinds of `Audio` ready to use: `Sound` for effects
 (4 voices, so a sound can play over itself) and `Music` (looping, fading

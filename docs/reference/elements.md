@@ -189,7 +189,7 @@ Takes no child elements.
 | `expanded` | [bool] | out (read-only) |
 | `has-children` | [bool] | out (read-only) |
 
-Functions: `toggle()`, `expand()`, `collapse()`, `expand-all()`, `collapse-all()`
+Functions: `toggle(int)`, `expand(int)`, `collapse(int)`, `expand-all()`, `collapse-all()`
 
 ## Selection
 
@@ -208,7 +208,7 @@ Callbacks:
 
 - `changed()`
 
-Functions: `select()`, `toggle()`, `extend-to()`, `set-selected()`, `select-all()`, `clear()`
+Functions: `select(int)`, `toggle(int)`, `extend-to(int)`, `set-selected(int, bool)`, `select-all()`, `clear()`
 
 ## FlowLayout
 
@@ -266,7 +266,7 @@ Takes no child elements.
 | `depth` | int | out (read-only) |
 | `busy` | bool | out (read-only) |
 
-Functions: `push()`, `pop()`, `clear()`
+Functions: `push(component)`, `pop()`, `clear()`
 
 ## Shortcut
 
@@ -681,7 +681,7 @@ Callbacks:
 - `javascript-finished(string)`
 - `javascript-failed(string)`
 
-Functions: `back()`, `forward()`, `reload()`, `stop()`, `run-javascript()`, `set-cookie()`
+Functions: `back()`, `forward()`, `reload()`, `stop()`, `run-javascript(string)`, `set-cookie(string, string)`
 
 ## Camera
 
@@ -701,7 +701,7 @@ Callbacks:
 
 - `picture-taken()`
 
-Functions: `take-picture()`, `save-picture()`
+Functions: `take-picture()`, `save-picture(string)`
 
 ## Accelerometer
 
@@ -872,7 +872,7 @@ Callbacks:
 
 - `finished()`
 
-Functions: `record()`, `stop()`, `save-recording()`
+Functions: `record()`, `stop()`, `save-recording(string)`
 
 ## AnimatedImage
 
@@ -1057,7 +1057,7 @@ Callbacks:
 
 - `paint()`
 
-Functions: `request-paint()`, `begin-path()`, `close-path()`, `move-to()`, `line-to()`, `quadratic-curve-to()`, `bezier-curve-to()`, `arc()`, `rect()`, `rounded-rect()`, `ellipse()`, `fill()`, `stroke()`, `clip()`, `fill-rect()`, `stroke-rect()`, `clear-rect()`, `fill-text()`, `draw-image()`, `save()`, `restore()`, `translate()`, `rotate()`, `scale()`, `reset-transform()`
+Functions: `request-paint()`, `begin-path()`, `close-path()`, `move-to(length, length)`, `line-to(length, length)`, `quadratic-curve-to(length, length, length, length)`, `bezier-curve-to(length, length, length, length, length, length)`, `arc(length, length, length, float, float, bool)`, `rect(length, length, length, length)`, `rounded-rect(length, length, length, length, length)`, `ellipse(length, length, length, length)`, `fill()`, `stroke()`, `clip()`, `fill-rect(length, length, length, length)`, `stroke-rect(length, length, length, length)`, `clear-rect(length, length, length, length)`, `fill-text(string, length, length)`, `draw-image(image, length, length, length, length)`, `save()`, `restore()`, `translate(length, length)`, `rotate(float)`, `scale(float, float)`, `reset-transform()`
 
 ## LineChart
 
@@ -1137,11 +1137,11 @@ Takes no child elements.
 | `multi-line` | bool | out (read-only) |
 | `password` | bool | out (read-only) |
 
-Functions: `send()`, `dismiss()`
+Functions: `send(string)`, `dismiss()`
 
 ## Settings
 
-Properties kept from one run of the application to the next: a component that inherits `Settings` has its declared properties (int, float, bool, string, length, duration, color) saved, under `category`, in `settings.ini` in the application's configuration folder (`StandardPaths`' `app-config`), or in `file`. With `format: registry`, on Windows they go in the registry instead, as QSettings does: under `HKEY_CURRENT_USER\Software\<app>`, or the key given as `file` (under `HKEY_CURRENT_USER`), a key per category; elsewhere `registry` is an INI file still. Saved values replace the defaults once the component and its users are set up, so properties linked to them with `<=>` take them too. Changes are written a moment later, and when it goes. Where there are no files (the web, microcontrollers), they last as long as the application. Not drawn.
+Properties kept from one run of the application to the next: a component that inherits `Settings` has its declared properties (int, float, bool, string, length, duration, color) saved, under `category`, in `settings.ini` in the application's configuration folder (`StandardPaths`' `app-config`), or in `file`. With `format: registry`, on Windows they go in the registry instead, as QSettings does: under `HKEY_CURRENT_USER\Software\<app>`, or the key given as `file` (under `HKEY_CURRENT_USER`), a key per category; elsewhere `registry` is an INI file still. Saved values replace the defaults once the component and its users are set up, so properties linked to them with `<=>` take them too. Changes are written a moment later, and when it goes. Where there are no files (the web, microcontrollers), they last as long as the application. Other values are reached by key, in `category` (`/` reaches into groups, as in `"columns/name"`): `value(key)` gives one as text ("" if there is none), `set-value(key, text)` sets it (and the property kept under that key), `contains(key)` tells whether it has one, `remove(key)` removes it and the group of that name (`remove("")`: everything in `category`); `all-keys` and `child-groups` list the keys and groups in `category`. Not drawn.
 
 Takes no child elements.
 
@@ -1150,6 +1150,10 @@ Takes no child elements.
 | `category` | string | in-out |
 | `file` | string | in-out |
 | `format` | SettingsFormat | in-out |
+| `all-keys` | [string] | out (read-only) |
+| `child-groups` | [string] | out (read-only) |
+
+Functions: `value(string) -> string`, `set-value(string, string)`, `contains(string) -> bool`, `remove(string)`
 
 ## StandardPaths
 

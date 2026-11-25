@@ -461,6 +461,7 @@ pub const Function = struct {
     /// Method called on the element value.
     zig: []const u8,
     params: []const Type = &.{},
+    ret: Type = .void,
 };
 
 pub const Builtin = struct {
@@ -1720,7 +1721,7 @@ pub const builtins = [_]Builtin{
     },
     .{
         .name = "Settings",
-        .doc = "Properties kept from one run of the application to the next: a component that inherits `Settings` has its declared properties (int, float, bool, string, length, duration, color) saved, under `category`, in `settings.ini` in the application's configuration folder (`StandardPaths`' `app-config`), or in `file`. With `format: registry`, on Windows they go in the registry instead, as QSettings does: under `HKEY_CURRENT_USER\\Software\\<app>`, or the key given as `file` (under `HKEY_CURRENT_USER`), a key per category; elsewhere `registry` is an INI file still. Saved values replace the defaults once the component and its users are set up, so properties linked to them with `<=>` take them too. Changes are written a moment later, and when it goes. Where there are no files (the web, microcontrollers), they last as long as the application. Not drawn.",
+        .doc = "Properties kept from one run of the application to the next: a component that inherits `Settings` has its declared properties (int, float, bool, string, length, duration, color) saved, under `category`, in `settings.ini` in the application's configuration folder (`StandardPaths`' `app-config`), or in `file`. With `format: registry`, on Windows they go in the registry instead, as QSettings does: under `HKEY_CURRENT_USER\\Software\\<app>`, or the key given as `file` (under `HKEY_CURRENT_USER`), a key per category; elsewhere `registry` is an INI file still. Saved values replace the defaults once the component and its users are set up, so properties linked to them with `<=>` take them too. Changes are written a moment later, and when it goes. Where there are no files (the web, microcontrollers), they last as long as the application. Other values are reached by key, in `category` (`/` reaches into groups, as in `\"columns/name\"`): `value(key)` gives one as text (\"\" if there is none), `set-value(key, text)` sets it (and the property kept under that key), `contains(key)` tells whether it has one, `remove(key)` removes it and the group of that name (`remove(\"\")`: everything in `category`); `all-keys` and `child-groups` list the keys and groups in `category`. Not drawn.",
         .zig_type = "zigulee.items.Settings",
         .init_call = "init(gpa)",
         .children = false,
@@ -1729,6 +1730,14 @@ pub const builtins = [_]Builtin{
             .{ .name = "category", .ty = .string, .zig = "category" },
             .{ .name = "file", .ty = .string, .zig = "file" },
             .{ .name = "format", .ty = .{ .enumeration = &settings_format }, .zig = "format" },
+            .{ .name = "all-keys", .ty = .{ .model = &rows.string }, .zig = "all_keys", .read_only = true },
+            .{ .name = "child-groups", .ty = .{ .model = &rows.string }, .zig = "child_groups", .read_only = true },
+        },
+        .functions = &.{
+            .{ .name = "value", .zig = "value", .params = &.{.string}, .ret = .string },
+            .{ .name = "set-value", .zig = "setValue", .params = &.{ .string, .string } },
+            .{ .name = "contains", .zig = "contains", .params = &.{.string}, .ret = .bool },
+            .{ .name = "remove", .zig = "remove", .params = &.{.string} },
         },
     },
     .{
