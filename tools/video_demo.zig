@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Claudio Russo
+// Copyright (c) 2026 Claudio Russo (gattoarancione)
 // SPDX-License-Identifier: MIT
 
 //! Makes the video example's clip (examples/video/demo.png): an animated

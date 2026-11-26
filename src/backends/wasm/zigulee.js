@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Claudio Russo
+// Copyright (c) 2026 Claudio Russo (gattoarancione)
 // SPDX-License-Identifier: MIT
 
 // zigulee in the browser: runs an app built with the zigulee-wasm backend in a

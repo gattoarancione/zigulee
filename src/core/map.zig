@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Claudio Russo
+// Copyright (c) 2026 Claudio Russo (gattoarancione)
 // SPDX-License-Identifier: MIT
 
 //! Maps: `MapView` shows a slippy map of web tiles (Web Mercator, 256

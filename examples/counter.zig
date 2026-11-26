@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Claudio Russo
+// Copyright (c) 2026 Claudio Russo (gattoarancione)
 // SPDX-License-Identifier: MIT
 
 //! A hand-written component in the shape the `.zge` compiler will generate:

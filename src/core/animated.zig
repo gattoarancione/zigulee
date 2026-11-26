@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Claudio Russo
+// Copyright (c) 2026 Claudio Russo (gattoarancione)
 // SPDX-License-Identifier: MIT
 
 //! Animated images (GIF, APNG): decoded frame by frame on the UI thread,

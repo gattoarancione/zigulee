@@ -5,6 +5,7 @@
   "version": "0.1.0",
   "publisher": "zigulee",
   "license": "MIT",
+  "author": "Claudio Russo (gattoarancione)",
   "repository": {
     "type": "git",
     "url": "https://github.com/gattoarancione/zigulee"

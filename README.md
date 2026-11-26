@@ -408,5 +408,6 @@ can run `zigulee-lsp` (stdio) for `*.zge` files.
 
 ## License
 
+Copyright (c) 2026 Claudio Russo ([gattoarancione](https://github.com/gattoarancione)).
 MIT, see [LICENSE](LICENSE). The fonts in [`examples/fonts`](examples/fonts)
 keep their own license, the SIL Open Font License.

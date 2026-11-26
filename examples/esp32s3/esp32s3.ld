@@ -1,4 +1,4 @@
-/* Copyright (c) 2026 Claudio Russo */
+/* Copyright (c) 2026 Claudio Russo (gattoarancione) */
 /* SPDX-License-Identifier: MIT */
 
 /* The firmware in the ESP32-S3's internal SRAM, loaded there by the ROM

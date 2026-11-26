@@ -1,5 +1,5 @@
 #!/bin/sh
-# Copyright (c) 2026 Claudio Russo
+# Copyright (c) 2026 Claudio Russo (gattoarancione)
 # SPDX-License-Identifier: MIT
 
 # Builds the language server and the extension, with the server bundled

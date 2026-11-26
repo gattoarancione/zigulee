@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Claudio Russo
+// Copyright (c) 2026 Claudio Russo (gattoarancione)
 // SPDX-License-Identifier: MIT
 
 //! WAV files (RIFF/WAVE): PCM at 8, 16, 24 or 32 bits, or 32-bit float;

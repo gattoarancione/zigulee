@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Claudio Russo
+// Copyright (c) 2026 Claudio Russo (gattoarancione)
 // SPDX-License-Identifier: MIT
 
 //! Web views on Linux with WebKitGTK (GTK 3: webkit2gtk-4.1, or 4.0), for
